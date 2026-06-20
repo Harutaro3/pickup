@@ -1,0 +1,945 @@
+/* ─────────────────────────────────────────────────────────────
+   QuickPick — App.css  v0.2
+   スマホ縦長 UI / ダークテーマ
+───────────────────────────────────────────────────────────── */
+
+/* ── リセット & ベース ─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d0d14;
+  --surface:  #161622;
+  --border:   #2a2a3d;
+  --text:     #f0f0f8;
+  --text-sub: #888899;
+  --like:     #ff4f7b;
+  --nope:     #4f8fff;
+  --tag-bg:   #1e1e30;
+  --tag-text: #aaaacc;
+  --radius:   20px;
+  --font:     'Inter', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── アプリ全体レイアウト ──────────────────────────────────── */
+.app {
+  max-width: 420px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 40px;
+}
+
+/* ── ヘッダー ─────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-logo {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, var(--like), #ff9a4f);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-counts {
+  display: flex;
+  gap: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.count-like { color: var(--like); }
+.count-nope { color: var(--nope); }
+
+/* ── タブナビ ─────────────────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.tab-btn:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+.tab-btn--active {
+  color: var(--like);
+  background: rgba(255, 79, 123, 0.1);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--like);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  padding: 0 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   好き一覧ページ
+───────────────────────────────────────────────────────────── */
+.liked-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 10px;
+  text-align: center;
+  min-height: 60dvh;
+}
+.liked-empty-icon {
+  font-size: 3.5rem;
+  color: var(--like);
+  opacity: 0.3;
+  line-height: 1;
+}
+.liked-empty-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.liked-empty-sub {
+  font-size: 0.8rem;
+  color: var(--text-sub);
+}
+
+.liked-page {
+  padding: 12px 16px 40px;
+}
+
+.liked-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.liked-count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--like);
+}
+.btn-clear {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-sub);
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.btn-clear:hover {
+  border-color: var(--like);
+  color: var(--like);
+}
+
+/* カードグリッド */
+.liked-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.liked-card {
+  display: flex;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  padding: 10px;
+}
+
+.liked-card-img {
+  width: 72px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--tag-bg);
+}
+.liked-card-thumb {
+  width: 72px;
+  height: 96px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--tag-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+
+.liked-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.liked-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.35;
+  /* 2行まで表示 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.liked-card-actresses {
+  font-size: 0.7rem;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.liked-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.tag--sm {
+  font-size: 0.6rem;
+  padding: 2px 7px;
+}
+.liked-card-link {
+  margin-top: auto;
+  font-size: 0.7rem;
+  color: var(--like);
+  text-decoration: none;
+  font-weight: 600;
+}
+.liked-card-link:hover { text-decoration: underline; }
+
+/* ─────────────────────────────────────────────────────────────
+   開発用メニュー（折りたたみ）
+   本番デプロイ時は JSX ごと削除する
+───────────────────────────────────────────────────────────── */
+.dev-tools {
+  border-bottom: 1px solid var(--border);
+}
+
+.dev-tools-toggle {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  font-size: 0.7rem;
+  padding: 6px 16px;
+  text-align: left;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: color 0.15s;
+}
+.dev-tools-toggle:hover { color: var(--text); }
+
+/* ── ファイル選択行（dev-tools内） ───────────────────────── */
+.file-row {
+  padding: 8px 16px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-file {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-sub);
+  padding: 8px 16px;
+  border-radius: 40px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.btn-file:hover {
+  border-color: var(--like);
+  color: var(--text);
+}
+.btn-file:disabled { /* アニメーション中は操作不可 */
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* サンプル動画読み込みボタン */
+.btn-sample {
+  background: var(--surface);
+  border: 1px solid #7b7bff;
+  color: #7b7bff;
+  padding: 8px 16px;
+  border-radius: 40px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.btn-sample:hover {
+  background: rgba(123, 123, 255, 0.1);
+  color: var(--text);
+}
+.btn-sample:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* FANZAサンプル読み込みボタン（目立つ配色） */
+.btn-fanza {
+  background: linear-gradient(135deg, #c0392b, #8e1a1a);
+  border: none;
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 40px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  box-shadow: 0 2px 12px rgba(192, 57, 43, 0.4);
+}
+.btn-fanza:hover  { opacity: 0.88; transform: scale(1.04); }
+.btn-fanza:active { transform: scale(0.97); }
+.btn-fanza:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── エラーバナー ─────────────────────────────────────────── */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 20px;
+  padding: 10px 14px;
+  background: rgba(192, 57, 43, 0.15);
+  border: 1px solid rgba(192, 57, 43, 0.5);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  color: #ff8080;
+  line-height: 1.4;
+}
+.error-icon { font-size: 1rem; flex-shrink: 0; }
+.error-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #ff8080;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+/* ── 追加取得インジケーター ───────────────────────────────── */
+.fetching-more {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-sub);
+  padding: 2px 0 4px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1;   }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ステージ（カード表示エリア）
+   overflow: hidden で背面カードのはみ出し分を隠す [修正⑥]
+───────────────────────────────────────────────────────────── */
+.stage {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px 16px 4px;   /* 上下を詰める */
+  overflow: hidden;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ④ カードスタック
+   前面・背面を z-index で重ねる。高さはカード内 aspect-ratio から自動決定。
+   固定 height を排除し、コンテンツに追従させる [修正⑧]
+───────────────────────────────────────────────────────────── */
+.card-stack {
+  position: relative;
+  width: 100%;
+  max-width: 420px;     /* 縦長カードに戻す */
+  padding-bottom: 20px; /* 背面カードのはみ出し分 */
+}
+
+/* ── スロット共通 ─────────────────────────────────────────── */
+.card-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+/*
+ * card-stack 自体の高さをコンテンツ（前面カード）に合わせるため、
+ * 前面スロットだけ position: relative にする [修正⑧]
+ */
+.card-slot--front {
+  position: relative;  /* ← これにより card-stack の高さが前面カードで決まる */
+  z-index: 2;
+}
+
+/* ── 背面カードスロット ────────────────────────────────────── */
+.card-slot--back {
+  z-index: 1;
+  /* 背面カードは前面カードの top と同じ位置から始まる（absolute のまま） */
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ④ 背面カード本体
+   transform-origin を center center に統一 [修正⑦]
+   scale + translateY で「一段下がった次のカード」を表現する
+───────────────────────────────────────────────────────────── */
+.card--back {
+  transform: scale(0.94) translateY(18px);
+  transform-origin: center center;  /* ⑦ bottom → center に修正 */
+  opacity: 0.72;
+  pointer-events: none;             /* 背面はタップ不可 */
+  transition: transform 0.36s cubic-bezier(.22,1,.36,1),
+              opacity   0.36s ease;
+}
+
+/*
+ * 前面カードの入場アニメーション
+ * setCurrent 後に requestAnimationFrame で isEntering=true になったとき付与される。
+ * 背面カードには一切付かないので「さらに次のカードがズレる」問題が起きない。
+ */
+.card--front-enter {
+  animation: enterFront 0.42s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes enterFront {
+  0%   { transform: scale(0.94) translateY(18px); opacity: 0.72; }
+  60%  { transform: scale(1.02) translateY(-3px);  opacity: 1;   }
+  100% { transform: scale(1)    translateY(0px);   opacity: 1;   }
+}
+
+/* ── 前面カード退場アニメーション ────────────────────────── */
+.card-slot--front.exit-right {
+  animation: swipeRight 0.36s ease forwards;
+  pointer-events: none;
+}
+.card-slot--front.exit-left {
+  animation: swipeLeft 0.36s ease forwards;
+  pointer-events: none;
+}
+
+/* ── カード本体（共通） ───────────────────────────────────── */
+.card {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  touch-action: none; /* ① スクロール暴発防止 */
+}
+.card:active { cursor: grabbing; }
+
+/* ── サムネイル / 動画エリア ──────────────────────────────── */
+.card-media {
+  width: 100%;
+  /* aspect-ratio ではなく clamp で高さを確保
+     横動画も縦動画も中央に収まる縦長スペース */
+  height: clamp(300px, 50dvh, 520px);
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-thumbnail {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-emoji {
+  font-size: 4rem;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+}
+
+/* 横動画: 幅いっぱい・上下黒帯あり
+   縦動画: 高さいっぱい・左右黒帯あり
+   どちらも contain で映像を切らない */
+.card-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #000;
+  touch-action: auto; /* シークバー操作を守る */
+}
+
+/* ── カード情報エリア ─────────────────────────────────────── */
+.card-body {
+  padding: 8px 12px 10px;
+}
+
+.card-counter {
+  font-size: 0.62rem;
+  color: var(--text-sub);
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.card-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-bottom: 5px;
+  color: var(--text);
+  /* 2行まで表示して省略 */
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ── FANZA メタ情報（出演・メーカー・価格）───────────────────── */
+.card-meta {
+  margin-bottom: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-meta-row {
+  display: flex;
+  gap: 5px;
+  font-size: 0.66rem;
+  line-height: 1.3;
+  overflow: hidden;
+}
+.meta-label {
+  flex-shrink: 0;
+  color: var(--text-sub);
+  font-weight: 600;
+  min-width: 3.2em;
+}
+.meta-value {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── iframe（サンプルプレイヤー）─────────────────────────────── */
+/*
+ * FANZAの iframe プレイヤーは「動画本体 + 操作UI（約60px）」を含む。
+ * aspect-ratio だとプレイヤーUIまで含めた高さを確保できないため、
+ * 固定高さを使う。
+ *
+ * 内訳イメージ（幅360px時）:
+ *   動画本体  ≒ 240px（360 × 480/720）
+ *   操作UI   ≒  60px
+ *   合計     ≒ 300px
+ *
+ * スマホ幅ごとに調整：
+ *   〜360px → 280px
+ *   〜420px → 300px（デフォルト）
+ *   420px〜 → 320px
+ */
+.card-media--iframe {
+  width: 100%;
+  height: 300px;               /* プレイヤーUI込みの高さ */
+  background: #000;
+  overflow: hidden;
+  touch-action: auto;          /* .card の touch-action: none を上書き */
+}
+
+/* さらに高さが足りない場合は 340px に変更（操作UIが見えるまで増やす） */
+/* .card-media--iframe { height: 340px; } */
+
+.card-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+  pointer-events: auto;        /* iframe内クリックを通す */
+  touch-action: auto;          /* タッチ操作を通す */
+  /* scrolling="no" で操作UIが切れる場合は scrolling="auto" を試す（JSX側） */
+}
+
+@media (max-width: 380px) {
+  .card-media--iframe { height: 260px; }
+}
+@media (min-width: 421px) {
+  .card-media--iframe { height: 320px; }
+}
+
+/* iframe操作ヒント */
+.iframe-hint {
+  font-size: 0.62rem;
+  color: var(--text-sub);
+  text-align: center;
+  padding: 4px 12px 0;
+  line-height: 1.4;
+}
+
+/* 詳細リンク（購入煽りなし）*/
+.card-detail-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--like);
+  text-decoration: none;
+}
+.card-detail-link:hover { text-decoration: underline; }
+
+/* ── パッケージ画像サムネイル ───────────────────────────────── */
+.card-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* パッケージ画像も切らずに表示 */
+  display: block;
+  background: #000;
+}
+
+.tag {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  font-size: 0.7rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+/* ── スタンプ（LIKE / NOPE） ──────────────────────────────── */
+.stamp {
+  position: absolute;
+  top: 32px;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border-width: 3px;
+  border-style: solid;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.stamp-like {
+  left: 20px;
+  color: var(--like);
+  border-color: var(--like);
+  background: rgba(255, 79, 123, 0.08);
+  transform: rotate(-12deg);
+}
+
+.stamp-nope {
+  right: 20px;
+  color: var(--nope);
+  border-color: var(--nope);
+  background: rgba(79, 143, 255, 0.08);
+  transform: rotate(12deg);
+}
+
+/* ── アクションボタン ─────────────────────────────────────── */
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  padding: 10px 20px 4px;  /* 上下を詰める */
+}
+
+.btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 64px;             /* 72px → 64px */
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid;
+  background: var(--surface);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn span  { font-size: 1.3rem; line-height: 1; }
+.btn small { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.04em; }
+
+.btn:hover:not(:disabled)  { transform: scale(1.1); }
+.btn:active:not(:disabled) { transform: scale(0.95); }
+.btn:disabled { opacity: 0.35; cursor: default; }
+
+.btn-like {
+  border-color: var(--like);
+  color: var(--like);
+  box-shadow: 0 0 24px rgba(255, 79, 123, 0.2);
+}
+.btn-like:hover:not(:disabled) {
+  background: rgba(255, 79, 123, 0.12);
+  box-shadow: 0 0 32px rgba(255, 79, 123, 0.4);
+}
+
+.btn-nope {
+  border-color: var(--nope);
+  color: var(--nope);
+  box-shadow: 0 0 24px rgba(79, 143, 255, 0.2);
+}
+.btn-nope:hover:not(:disabled) {
+  background: rgba(79, 143, 255, 0.12);
+  box-shadow: 0 0 32px rgba(79, 143, 255, 0.4);
+}
+
+/* ── キーボード操作ヒント ─────────────────────────────────── */
+.key-hint {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-sub);
+  padding: 2px 20px 8px;
+  letter-spacing: 0.03em;
+}
+
+.key-hint kbd {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.68rem;
+  font-family: var(--font);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+/* ── 完了画面 ─────────────────────────────────────────────── */
+.finished {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.finished-icon { font-size: 4rem; }
+
+.finished-text {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.finished-sub {
+  color: var(--text-sub);
+  font-size: 0.9rem;
+}
+
+.btn-reset {
+  margin-top: 16px;
+  background: var(--like);
+  color: #fff;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 40px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-reset:hover { opacity: 0.85; }
+
+/* ── 履歴セクション ───────────────────────────────────────── */
+.history {
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.history-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-sub);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.history-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ② sourceType === "local" を示すバッジ */
+.badge-local {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7b7bff;
+  border: 1px solid #7b7bff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* sourceType === "fanza" を示すバッジ */
+.badge-fanza {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ff6060;
+  border: 1px solid #ff6060;
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* ── 退場アニメーション ───────────────────────────────────── */
+@keyframes swipeRight {
+  0%   { transform: translateX(0)     rotate(0deg);  opacity: 1; }
+  100% { transform: translateX(140%)  rotate(22deg); opacity: 0; }
+}
+
+@keyframes swipeLeft {
+  0%   { transform: translateX(0)      rotate(0deg);  opacity: 1; }
+  100% { transform: translateX(-140%)  rotate(-22deg); opacity: 0; }
+}
+
+/* ── レスポンシブ補正 ─────────────────────────────────────── */
+
+/* スマホ全般（600px以下）
+   キーヒントを非表示にしてボタンを詰める */
+@media (max-width: 600px) {
+  .key-hint { display: none; }
+
+  .actions {
+    padding: 8px 20px 4px;
+    gap: 24px;
+  }
+  .btn {
+    width: 58px;
+    height: 58px;
+  }
+  .btn span  { font-size: 1.2rem; }
+  .btn small { font-size: 0.58rem; }
+
+  /* カード動画エリア: 画面高さに応じて調整
+     iPhone 12 Safari の実効高さ ~660px を想定
+     ヘッダー56 + devtool28 + stage + actions70 + hint0 → stage に ~500px 割り当て */
+  .card-media {
+    height: clamp(260px, 46dvh, 460px);
+  }
+
+  .card-body {
+    padding: 8px 12px 10px;
+  }
+  .card-title {
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+  }
+  .card-meta {
+    margin-bottom: 4px;
+  }
+  .card-meta-row {
+    font-size: 0.65rem;
+  }
+  .card-tags {
+    gap: 4px;
+  }
+  .tag {
+    font-size: 0.62rem;
+    padding: 2px 8px;
+  }
+}
+
+/* 極小画面（380px以下）*/
+@media (max-width: 380px) {
+  .card-emoji { font-size: 3rem; }
+  .card-media {
+    height: clamp(220px, 42dvh, 380px);
+  }
+  .btn { width: 52px; height: 52px; }
+  .btn span { font-size: 1.1rem; }
+}

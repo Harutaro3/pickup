@@ -1,0 +1,8 @@
+// netlify/functions/health.js
+exports.handler = async () => {
+  return {
+    statusCode: 200,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "ok", version: "0.3", mock: false }),
+  };
+};
