@@ -8,7 +8,8 @@ import {
   PrivacyPage, TermsPage, ContactPage, OperatorPage, AdsPage,
 } from "./pages.jsx";
 
-const AGE_KEY = "quickpick_age_verified";
+const AGE_KEY     = "eropick_age_verified";
+const AGE_KEY_OLD = "quickpick_age_verified"; // 旧キー（移行用）
 
 // ─── 年齢確認ゲート ───────────────────────────────────────────
 function AgeGate({ onVerified }) {
@@ -20,7 +21,7 @@ function AgeGate({ onVerified }) {
         <div className="age-box">
           <h1 className="age-title">このサイトは閲覧できません</h1>
           <p className="age-text">
-            QuickPickは、将来的に成人向け作品を扱う予定の作品発見サービスです。
+            EroPickは成人向け作品のサンプル動画を探せる非公式サービスです。
             18歳未満の方はご利用いただけません。
           </p>
         </div>
@@ -34,7 +35,7 @@ function AgeGate({ onVerified }) {
         <h1 className="age-logo">⚡ {appConfig.appName}</h1>
         <h2 className="age-title">年齢確認</h2>
         <p className="age-text">
-          QuickPickは、将来的に成人向け作品を扱う予定の作品発見サービスです。
+          EroPickは成人向け作品のサンプル動画を探せる非公式サービスです。
           18歳未満の方はご利用いただけません。
         </p>
         <p className="age-question">あなたは18歳以上ですか？</p>
@@ -66,7 +67,7 @@ const FOOTER_LINKS = [
   ["works",     "サンプル作品一覧"],
   ["swipe",     "スワイプデモ"],
   ["howto",     "使い方"],
-  ["about",     "QuickPickについて"],
+  ["about",     "EroPickについて"],
   ["article-1", "開発記事"],
   ["privacy",   "プライバシーポリシー"],
   ["terms",     "利用規約"],
@@ -110,7 +111,15 @@ function TopNav({ onNavigate }) {
 // ─── メインアプリ（ルーター）──────────────────────────────────
 export default function App() {
   const [ageVerified, setAgeVerified] = useState(() => {
-    try { return localStorage.getItem(AGE_KEY) === "true"; } catch { return false; }
+    try {
+      // 新キーを優先。なければ旧キーから移行。
+      if (localStorage.getItem(AGE_KEY) === "true") return true;
+      if (localStorage.getItem(AGE_KEY_OLD) === "true") {
+        localStorage.setItem(AGE_KEY, "true");
+        return true;
+      }
+      return false;
+    } catch { return false; }
   });
   const [route, setRoute] = useState("home");
 
@@ -120,7 +129,7 @@ export default function App() {
   }, [route]);
 
   const handleResetAge = () => {
-    try { localStorage.removeItem(AGE_KEY); } catch {}
+    try { localStorage.removeItem(AGE_KEY); localStorage.removeItem(AGE_KEY_OLD); } catch {}
     setAgeVerified(false);
     setRoute("home");
   };
@@ -183,7 +192,7 @@ function routeLabel(route) {
   const map = {
     works:     "サンプル作品一覧",
     howto:     "使い方",
-    about:     "QuickPickについて",
+    about:     "EroPickについて",
     "article-1": "開発記事",
     "article-2": "開発記事",
     "article-3": "開発記事",
