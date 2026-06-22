@@ -134,13 +134,13 @@ export default function App() {
     setRoute("home");
   };
 
-  // 年齢未確認ならゲートのみ表示
+  // 年齢未確認ならゲートのみ
   if (!ageVerified) {
     return <AgeGate onVerified={() => setAgeVerified(true)} />;
   }
 
-  // スワイプ画面はフルスクリーン（フッターなし、SwipeApp内に戻る導線あり）
-  if (route === "swipe") {
+  // 年齢確認済みなら即スワイプ画面（トップページをスキップ）
+  if (route === "swipe" || route === "home") {
     return <SwipeApp onNavigate={setRoute} />;
   }
 
