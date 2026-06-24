@@ -11,6 +11,7 @@ const STORAGE_KEY         = "eropick_v3";
 const HISTORY_STORAGE_KEY = "eropick_history_v3";
 const OLD_STORAGE_KEY         = "quickpick_v3";
 const OLD_HISTORY_STORAGE_KEY = "quickpick_history_v3";
+const TAG_WEIGHTS_KEY         = "eropick_tagweights_v1"; // タグ重み（好み学習）
 
 function loadStorage() {
   try {
@@ -55,6 +56,20 @@ let _storageCache = null;
 function _initialStorage() {
   if (!_storageCache) _storageCache = loadStorage();
   return _storageCache;
+}
+
+// ─── タグ重み（好み学習） ──────────────────────────────────────
+function loadTagWeights() {
+  try {
+    const raw = localStorage.getItem(TAG_WEIGHTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+/** カードのタグスコアを計算（ジャンル + 出演者） */
+function scoreItem(card, weights) {
+  return [...(card.genres ?? []), ...(card.actresses ?? [])]
+    .reduce((s, t) => s + (weights[t] ?? 0), 0);
 }
 
 // ─── 重複排除・並び替え ────────────────────────────────────────
@@ -169,7 +184,7 @@ function LikedPage({ liked, onClear }) {
 }
 
 // ─── CardContent ──────────────────────────────────────────────
-function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike }) {
+function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp, onThumbsDown }) {
   const isIframe = card.sampleType === "iframe" && card.videoSrc;
   const outbound = getOutboundUrl(card);
 
@@ -220,9 +235,6 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike }) {
       <div className={isIframe ? "card-media card-media--iframe" : "card-media"}>
         {renderMedia()}
       </div>
-      {isIframe && (
-        <p className="iframe-hint">動画操作後はカード外をクリックするとキー操作に戻ります</p>
-      )}
 
       {/* カード情報オーバーレイ（下部）*/}
       <div className="card-overlay">
@@ -257,14 +269,24 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike }) {
           )}
         </div>
 
-        {/* いいねボタン（右下）*/}
-        <button
-          className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
-          onClick={(e) => { e.stopPropagation(); onLike(); }}
-          aria-label="いいね"
-        >
-          ♥
-        </button>
+        {/* アクションボタン群（右下）*/}
+        <div className="card-actions">
+          <button
+            className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
+            onClick={(e) => { e.stopPropagation(); onLike(); }}
+            aria-label="保存"
+          >♥</button>
+          <button
+            className="btn-thumbs btn-thumbs--up"
+            onClick={(e) => { e.stopPropagation(); onThumbsUp(); }}
+            aria-label="好き"
+          >👍</button>
+          <button
+            className="btn-thumbs btn-thumbs--down"
+            onClick={(e) => { e.stopPropagation(); onThumbsDown(); }}
+            aria-label="スキップ"
+          >👎</button>
+        </div>
       </div>
     </div>
   );
@@ -276,6 +298,7 @@ export default function SwipeApp({ onNavigate }) {
   const [cards, setCards]         = useState([]);
   const [current, setCurrent]     = useState(0);
   const [liked, setLiked]         = useState(() => _initialStorage().liked);
+  const [tagWeights, setTagWeights] = useState(() => loadTagWeights()); // 好みタグ重み
   const [likeFlashId, setLikeFlashId] = useState(null); // ダブルタップ演出用
   const [swipeDir, setSwipeDir]   = useState(null); // "up" | "down"
   const [isAnimating, setIsAnimating] = useState(false);
@@ -290,6 +313,7 @@ export default function SwipeApp({ onNavigate }) {
   const cardsRef        = useRef(cards);
   const isAnimatingRef  = useRef(false);
   const videoRef        = useRef(null);
+  const tagWeightsRef   = useRef(tagWeights); // fetchMore 内で最新値を参照
   // ダブルタップ検出用
   const lastTapRef      = useRef(0);
   // ドラッグ用
@@ -300,6 +324,10 @@ export default function SwipeApp({ onNavigate }) {
   useEffect(() => { cardsRef.current = cards; }, [cards]);
   useEffect(() => { return () => { revokeLocalCardUrls(cardsRef.current); }; }, []); // eslint-disable-line
   useEffect(() => { saveStorage(liked); }, [liked]);
+  useEffect(() => {
+    tagWeightsRef.current = tagWeights;
+    try { localStorage.setItem(TAG_WEIGHTS_KEY, JSON.stringify(tagWeights)); } catch {}
+  }, [tagWeights]);
 
   // 表示中の履歴（decisionHistoryの代わり - seenIds管理用）
   const seenIdsRef = useRef(new Set(liked.map((c) => c.id)));
@@ -341,7 +369,10 @@ export default function SwipeApp({ onNavigate }) {
       const data = await fetchFanzaCards({ random: true });
       fanzaOffsetRef.current = data.debug?.nextOffset || (data.offset ?? 1) + fanzaHits;
       if (isDev && data.debug) log("[fanza] debug:", data.debug);
-      const sorted = sortBySeenStatus(data.cards, seenIdsRef.current);
+      const weightSorted = [...data.cards].sort(
+        (a, b) => scoreItem(b, tagWeightsRef.current) - scoreItem(a, tagWeightsRef.current)
+      );
+      const sorted = sortBySeenStatus(weightSorted, seenIdsRef.current);
       setCards(sorted);
       setCurrent(0);
       setSwipeDir(null);
@@ -361,7 +392,10 @@ export default function SwipeApp({ onNavigate }) {
       const offset = fanzaOffsetRef.current;
       const data   = await fetchFanzaCards({ offset, random: false });
       fanzaOffsetRef.current = data.debug?.nextOffset || (offset + fanzaHits);
-      setCards((prev) => appendUniqueCards(prev, data.cards));
+      const weightSorted = [...data.cards].sort(
+        (a, b) => scoreItem(b, tagWeightsRef.current) - scoreItem(a, tagWeightsRef.current)
+      );
+      setCards((prev) => appendUniqueCards(prev, weightSorted));
     } catch (err) {
       log("[fanza] fetchMore error:", err.message);
     } finally {
@@ -414,16 +448,49 @@ export default function SwipeApp({ onNavigate }) {
     }, 300);
   }, [current]);
 
-  // ─── いいね ───────────────────────────────────────────────────
-  const handleLike = useCallback((card) => {
-    if (!card) return;
-    setLikeFlashId(card.id);
-    setTimeout(() => setLikeFlashId(null), 600);
-    setLiked((prev) => {
-      if (prev.some((c) => c.id === card.id)) return prev; // 重複しない
-      return [...prev, toStorageItem(card)];
+  // ─── タグ重み更新（好み学習）─────────────────────────────────
+  const applyTagDelta = useCallback((card, delta) => {
+    const tags = [...(card.genres ?? []), ...(card.actresses ?? [])];
+    if (tags.length === 0) return;
+    setTagWeights((prev) => {
+      const next = { ...prev };
+      tags.forEach((t) => { next[t] = (next[t] ?? 0) + delta; });
+      return next;
     });
   }, []);
+
+  // ─── いいね（トグル方式）──────────────────────────────────────
+  const handleLike = useCallback((card) => {
+    if (!card) return;
+    const isCurrentlyLiked = seenIdsRef.current.has(card.id);
+
+    if (isCurrentlyLiked) {
+      // 取り消し：削除 + タグ -1（アニメなし）
+      setLiked((prev) => prev.filter((c) => c.id !== card.id));
+      applyTagDelta(card, -1);
+    } else {
+      // いいね：追加 + タグ +1 + フラッシュ演出
+      setLikeFlashId(card.id);
+      setTimeout(() => setLikeFlashId(null), 600);
+      setLiked((prev) => {
+        if (prev.some((c) => c.id === card.id)) return prev;
+        return [...prev, toStorageItem(card)];
+      });
+      applyTagDelta(card, 1);
+    }
+  }, [applyTagDelta]);
+
+  // ─── 👍 好き / 👎 スキップ（タグ学習） ────────────────────────
+  const handleThumbsUp = useCallback((card) => {
+    if (!card) return;
+    applyTagDelta(card, 1);
+  }, [applyTagDelta]);
+
+  const handleThumbsDown = useCallback((card) => {
+    if (!card) return;
+    applyTagDelta(card, -1);
+    goNext();
+  }, [applyTagDelta, goNext]);
 
   const handleDoubleTap = useCallback((card) => {
     const now = Date.now();
@@ -570,6 +637,8 @@ export default function SwipeApp({ onNavigate }) {
                 likeFlash={likeFlashId === currentCard.id}
                 onDoubleTap={() => handleDoubleTap(currentCard)}
                 onLike={() => handleLike(currentCard)}
+                onThumbsUp={() => handleThumbsUp(currentCard)}
+                onThumbsDown={() => handleThumbsDown(currentCard)}
               />
             </div>
           )}
@@ -580,25 +649,6 @@ export default function SwipeApp({ onNavigate }) {
               <div className="finished-icon">🎉</div>
               <p className="finished-text">最後まで見ました</p>
               <button className="btn-reset" onClick={handleLoadFanza}>もっと見る</button>
-            </div>
-          )}
-
-          {/* ── ナビゲーションヒント ─────────────────── */}
-          {currentCard && !isAtEnd && (
-            <div className="shortform-nav">
-              <button
-                className={`nav-btn nav-btn--prev ${isAtStart ? "nav-btn--disabled" : ""}`}
-                onClick={goPrev}
-                disabled={isAtStart || isAnimating}
-                aria-label="前の動画"
-              >▲</button>
-              <div className="nav-counter">{current + 1} / {cards.length}</div>
-              <button
-                className="nav-btn nav-btn--next"
-                onClick={goNext}
-                disabled={isAnimating}
-                aria-label="次の動画"
-              >▼</button>
             </div>
           )}
 

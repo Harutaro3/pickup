@@ -1191,3 +1191,43 @@ html, body, #root {
 @media (max-width: 600px) {
   .key-hint { display: none; }
 }
+
+/* ════════════════════════════════════════════════════════
+   App.css 追加分  ─  EroPick v0.5.2
+   既存の App.css の末尾にこの内容を追記してください
+   ════════════════════════════════════════════════════════ */
+
+/* ── アクションボタン群（♥ 👍 👎）────────────────────── */
+.card-actions {
+  position: absolute;
+  bottom: 16px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+}
+
+/* 👍 / 👎 ボタン共通 */
+.btn-thumbs {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s, background 0.15s;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.btn-thumbs:active { transform: scale(0.84); }
+
+/* 👍 押した直後の視覚フィードバック（任意・必要なら） */
+.btn-thumbs--up:active  { background: rgba(79, 195, 247, 0.3); }
+.btn-thumbs--down:active { background: rgba(255, 100, 100, 0.3); }
+
