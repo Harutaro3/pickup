@@ -134,7 +134,7 @@ function sortBySeenStatus(cards, seenIds) {
 }
 
 // ─── 好き一覧ページ ────────────────────────────────────────────
-function LikedPage({ liked, onClear }) {
+function LikedPage({ liked, onClear, onRemove }) {
   if (liked.length === 0) {
     return (
       <div className="liked-empty">
@@ -148,7 +148,7 @@ function LikedPage({ liked, onClear }) {
     <div className="liked-page">
       <div className="liked-header">
         <span className="liked-count">♥ {liked.length} 件</span>
-        <button className="btn-clear" onClick={onClear}>クリア</button>
+        <button className="btn-clear" onClick={onClear}>すべてクリア</button>
       </div>
       <div className="liked-grid">
         {[...liked].reverse().map((card) => {
@@ -169,11 +169,18 @@ function LikedPage({ liked, onClear }) {
                     <span key={t} className="tag tag--sm">{t}</span>
                   ))}
                 </div>
-                {outbound && (
-                  <a href={outbound} target="_blank" rel="noopener noreferrer" className="liked-card-link">
-                    詳細を見る →
-                  </a>
-                )}
+                <div className="liked-card-footer">
+                  {outbound && (
+                    <a href={outbound} target="_blank" rel="noopener noreferrer" className="liked-card-link">
+                      詳細を見る →
+                    </a>
+                  )}
+                  <button
+                    className="liked-card-remove"
+                    onClick={() => onRemove(card.id)}
+                    aria-label="削除"
+                  >✕</button>
+                </div>
               </div>
             </div>
           );
@@ -184,19 +191,42 @@ function LikedPage({ liked, onClear }) {
 }
 
 // ─── CardContent ──────────────────────────────────────────────
-function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp, onThumbsDown }) {
+function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp, onThumbsDown, videoRef }) {
   const isIframe = card.sampleType === "iframe" && card.videoSrc;
   const outbound = getOutboundUrl(card);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
+
+  const handlePlayPause = (e) => {
+    e.stopPropagation();
+    const vid = videoRef?.current;
+    if (!vid) return;
+    if (vid.paused) { vid.play(); } else { vid.pause(); }
+  };
 
   const renderMedia = () => {
     if (card.sampleType === "video" && card.videoSrc) {
       return (
-        <video
-          src={card.videoSrc}
-          controls playsInline preload="metadata"
-          className="card-video"
-          onClick={(e) => e.stopPropagation()}
-        />
+        <div className="video-wrapper">
+          <video
+            ref={videoRef}
+            src={card.videoSrc}
+            controls
+            playsInline
+            preload="metadata"
+            className="card-video"
+            onPlay={() => setIsVideoPlaying(true)}
+            onPause={() => setIsVideoPlaying(false)}
+            onClick={(e) => e.stopPropagation()}
+          />
+          {/* 大きな再生/停止ボタン（PCでクリックしやすい） */}
+          <button
+            className={`btn-play-pause ${isVideoPlaying ? "btn-play-pause--playing" : ""}`}
+            onClick={handlePlayPause}
+            aria-label={isVideoPlaying ? "停止" : "再生"}
+          >
+            {isVideoPlaying ? "⏸" : "▶"}
+          </button>
+        </div>
       );
     }
     if (isIframe) {
@@ -568,15 +598,35 @@ export default function SwipeApp({ onNavigate }) {
     if (window.confirm(`いいね ${liked.length} 件をクリアしますか？`)) setLiked([]);
   };
 
+  // 個別削除（タグ重みも-1して戻す）
+  const handleRemoveFromLiked = useCallback((id) => {
+    const card = liked.find((c) => c.id === id);
+    if (card) applyTagDelta(card, -1);
+    setLiked((prev) => prev.filter((c) => c.id !== id));
+  }, [liked, applyTagDelta]);
+
   const likedIds = new Set(liked.map((c) => c.id));
   const showLoading = isFetchingFanza && cards.length === 0;
   const showEmpty   = !isFetchingFanza && !fanzaError && cards.length === 0;
   const isCurrentLiked = currentCard ? likedIds.has(currentCard.id) : false;
 
   return (
-    <div className="app app--shortform">
-      {/* ── ヘッダー ─────────────────────────────────────── */}
-      <header className="header header--shortform">
+    <div
+      className="app app--shortform"
+      onMouseDown={activeTab === "feed" ? handleTouchStart : undefined}
+      onMouseMove={activeTab === "feed" ? (e) => { if (dragStartRef.current) handleTouchMove(e); } : undefined}
+      onMouseUp={activeTab === "feed" ? handleTouchEnd : undefined}
+      onMouseLeave={activeTab === "feed" ? (e) => { if (dragStartRef.current) handleTouchEnd(e); } : undefined}
+      onTouchStart={activeTab === "feed" ? handleTouchStart : undefined}
+      onTouchMove={activeTab === "feed" ? handleTouchMove : undefined}
+      onTouchEnd={activeTab === "feed" ? handleTouchEnd : undefined}
+    >
+      {/* ── ヘッダー（スワイプ誤動作を防ぐ）── */}
+      <header
+        className="header header--shortform"
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
         <button className="header-logo header-logo--btn" onClick={() => onNavigate && onNavigate("home")}>
           ⚡ {appConfig.appName}
         </button>
@@ -598,16 +648,7 @@ export default function SwipeApp({ onNavigate }) {
 
       {/* ════════════════ フィードタブ ════════════════ */}
       {activeTab === "feed" && (
-        <div
-          className="shortform-stage"
-          onMouseDown={handleTouchStart}
-          onMouseMove={(e) => { if (dragStartRef.current) handleTouchMove(e); }}
-          onMouseUp={handleTouchEnd}
-          onMouseLeave={(e) => { if (dragStartRef.current) handleTouchEnd(e); }}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="shortform-stage">
           {fanzaError && (
             <div className="error-banner" role="alert">
               <span className="error-icon">⚠️</span>
@@ -639,6 +680,7 @@ export default function SwipeApp({ onNavigate }) {
                 onLike={() => handleLike(currentCard)}
                 onThumbsUp={() => handleThumbsUp(currentCard)}
                 onThumbsDown={() => handleThumbsDown(currentCard)}
+                videoRef={videoRef}
               />
             </div>
           )}
@@ -660,7 +702,7 @@ export default function SwipeApp({ onNavigate }) {
 
       {/* ════════════════ いいね一覧タブ ════════════════ */}
       {activeTab === "liked" && (
-        <LikedPage liked={liked} onClear={handleClearLiked} />
+        <LikedPage liked={liked} onClear={handleClearLiked} onRemove={handleRemoveFromLiked} />
       )}
 
       {/* ── 注意文 ───────────────────────────────────── */}

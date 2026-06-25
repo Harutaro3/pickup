@@ -1231,3 +1231,124 @@ html, body, #root {
 .btn-thumbs--up:active  { background: rgba(79, 195, 247, 0.3); }
 .btn-thumbs--down:active { background: rgba(255, 100, 100, 0.3); }
 
+/* ════════════════════════════════════════════════════════
+   App.css 追記分  ─  EroPick v0.6
+   既存 App.css の末尾にこの内容を追記してください
+   ════════════════════════════════════════════════════════ */
+
+/* ─── PC レイアウト：カードを中央に固定 ─────────────────── */
+/* shortform-stage をビューポートいっぱいに広げて、
+   その中でカードを中央寄せにする                         */
+.shortform-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* height は既存CSS次第。未定義なら追加 */
+  min-height: 0;
+  flex: 1;
+}
+
+/* カード幅の上限（PC で広がりすぎない） */
+.shortform-card {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ─── 動画ラッパー（video + 再生ボタンを重ねる） ────────── */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.video-wrapper .card-video {
+  display: block;
+  width: 100%;
+}
+
+/* 大きな再生/停止ボタン（PC でクリックしやすい） */
+.btn-play-pause {
+  position: absolute;
+  bottom: 48px;       /* ネイティブコントロールバーの上あたり */
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  z-index: 10;
+}
+.btn-play-pause:hover   { background: rgba(0, 0, 0, 0.75); }
+.btn-play-pause:active  { transform: scale(0.88); }
+
+/* 再生中はアイコンを薄く（停止方向の意思表示） */
+.btn-play-pause--playing { background: rgba(255, 255, 255, 0.15); }
+
+/* ─── アクションボタン群（♥ 👍 👎）────────────────────── */
+.card-actions {
+  position: absolute;
+  bottom: 16px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 10;
+}
+
+/* 👍 / 👎 ボタン共通 */
+.btn-thumbs {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s, background 0.15s;
+}
+.btn-thumbs:active { transform: scale(0.84); }
+.btn-thumbs--up:active   { background: rgba(79, 195, 247, 0.3); }
+.btn-thumbs--down:active { background: rgba(255, 100, 100, 0.3); }
+
+/* ─── いいね一覧：個別削除ボタン ───────────────────────── */
+.liked-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+/* 「詳細を見る」は既存スタイルがあれば上書き不要 */
+/* .liked-card-link はそのまま使う */
+
+.liked-card-remove {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 60, 60, 0.15);
+  color: rgba(255, 100, 100, 0.9);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  line-height: 1;
+}
+.liked-card-remove:hover  { background: rgba(255, 60, 60, 0.35); }
+.liked-card-remove:active { transform: scale(0.84); }
+
+

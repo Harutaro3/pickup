@@ -131,6 +131,7 @@ function itemToCard(item) {
     title:         item.title || "タイトル不明",
     videoSrc,
     sampleType,
+    mediaType: sampleType,
     imageUrl,
     normalURL,
     affiliateURL,
