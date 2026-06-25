@@ -1352,3 +1352,154 @@ html, body, #root {
 .liked-card-remove:active { transform: scale(0.84); }
 
 
+/* ════════════════════════════════════════════════════════
+   App.css 追記分  ─  EroPick v0.7
+   既存 App.css の末尾にこの内容を追記してください
+   ════════════════════════════════════════════════════════ */
+
+/* ─── PCドラッグでテキスト選択されない ──────────────────── */
+.app--shortform {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* フィード表示中はネイティブスクロールを無効化
+   （PointerEvents の preventDefault を有効にするため必須） */
+.app--shortform .shortform-stage {
+  touch-action: none;
+}
+
+/* ─── いいね一覧は通常スクロールを維持 ─────────────────── */
+.liked-page {
+  touch-action: pan-y;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── PC：カード中央固定 ────────────────────────────────── */
+.shortform-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
+}
+
+.shortform-card {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* ─── 3層構造：card-inner が基準 ────────────────────────── */
+.card-inner {
+  position: relative;   /* 各レイヤーの absolute の基準 */
+  width: 100%;
+  height: 100%;
+}
+
+/* Layer 2：テキスト情報（下部グラデーション）
+   右側にボタン分の余白を確保してテキストが被らないようにする */
+.card-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  pointer-events: none;   /* スワイプの邪魔をしない */
+}
+.card-overlay > * {
+  pointer-events: auto;   /* 内側のリンク・ボタンは有効 */
+}
+.card-body {
+  padding-right: 68px;    /* Layer 3 のボタン列と重ならない幅 */
+}
+
+/* Layer 3：アクションボタン（card-inner に対して absolute）*/
+.card-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  z-index: 10;            /* テキストより前面 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ─── 動画ラッパー ─────────────────────────────────────── */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+}
+.video-wrapper .card-video {
+  display: block;
+  width: 100%;
+}
+
+/* 再生/停止ボタン（PCでクリックしやすいサイズ）*/
+.btn-play-pause {
+  position: absolute;
+  bottom: 48px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  z-index: 10;
+}
+.btn-play-pause:hover  { background: rgba(0, 0, 0, 0.75); }
+.btn-play-pause:active { transform: scale(0.88); }
+.btn-play-pause--playing { background: rgba(255, 255, 255, 0.15); }
+
+/* ─── 👍 / 👎 ボタン共通 ────────────────────────────────── */
+.btn-thumbs {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s, background 0.15s;
+}
+.btn-thumbs:active           { transform: scale(0.84); }
+.btn-thumbs--up:active       { background: rgba(79, 195, 247, 0.3); }
+.btn-thumbs--down:active     { background: rgba(255, 100, 100, 0.3); }
+
+/* ─── いいね一覧：個別削除ボタン ──────────────────────── */
+.liked-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.liked-card-remove {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 60, 60, 0.15);
+  color: rgba(255, 100, 100, 0.9);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+.liked-card-remove:hover  { background: rgba(255, 60, 60, 0.35); }
+.liked-card-remove:active { transform: scale(0.84); }

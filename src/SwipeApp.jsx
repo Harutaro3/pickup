@@ -256,17 +256,18 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp
   };
 
   return (
-    <div className="card-inner" onDoubleClick={onDoubleTap}>
+    <div className="card-inner">
       {/* いいねフラッシュ演出 */}
       {likeFlash && (
         <div className="like-flash">♥</div>
       )}
 
+      {/* ── Layer 1: メディア（video / iframe / thumbnail）── */}
       <div className={isIframe ? "card-media card-media--iframe" : "card-media"}>
         {renderMedia()}
       </div>
 
-      {/* カード情報オーバーレイ（下部）*/}
+      {/* ── Layer 2: テキスト情報（下部グラデーション）── */}
       <div className="card-overlay">
         <div className="card-body">
           <h2 className="card-title">{card.title}</h2>
@@ -298,25 +299,25 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp
             </a>
           )}
         </div>
+      </div>
 
-        {/* アクションボタン群（右下）*/}
-        <div className="card-actions">
-          <button
-            className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
-            onClick={(e) => { e.stopPropagation(); onLike(); }}
-            aria-label="保存"
-          >♥</button>
-          <button
-            className="btn-thumbs btn-thumbs--up"
-            onClick={(e) => { e.stopPropagation(); onThumbsUp(); }}
-            aria-label="好き"
-          >👍</button>
-          <button
-            className="btn-thumbs btn-thumbs--down"
-            onClick={(e) => { e.stopPropagation(); onThumbsDown(); }}
-            aria-label="スキップ"
-          >👎</button>
-        </div>
+      {/* ── Layer 3: アクションボタン（右側固定・テキストと分離）── */}
+      <div className="card-actions" onPointerDown={(e) => e.stopPropagation()}>
+        <button
+          className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onLike(); }}
+          aria-label="保存"
+        >♥</button>
+        <button
+          className="btn-thumbs btn-thumbs--up"
+          onClick={(e) => { e.stopPropagation(); onThumbsUp(); }}
+          aria-label="好き"
+        >👍</button>
+        <button
+          className="btn-thumbs btn-thumbs--down"
+          onClick={(e) => { e.stopPropagation(); onThumbsDown(); }}
+          aria-label="スキップ"
+        >👎</button>
       </div>
     </div>
   );
@@ -550,49 +551,57 @@ export default function SwipeApp({ onNavigate }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [goNext, goPrev, handleLike, activeTab, currentCard]);
 
-  // ─── タッチ / ドラッグ操作 ────────────────────────────────────
-  const handleTouchStart = useCallback((e) => {
+  // ─── ポインター操作（PC・スマホ統合）────────────────────────
+  // Pointer Events API で mouse / touch を一本化。
+  // setPointerCapture でドラッグ中にポインタを見失わない。
+  const handlePointerDown = useCallback((e) => {
     if (isAnimatingRef.current) return;
-    const t = e.touches ? e.touches[0] : e;
-    dragStartRef.current   = { x: t.clientX, y: t.clientY, time: Date.now() };
-    dragCurrentRef.current = { x: t.clientX, y: t.clientY };
+    if (!e.isPrimary) return;          // マルチタッチは無視
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    dragStartRef.current   = { x: e.clientX, y: e.clientY, time: Date.now() };
+    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
     isDraggingRef.current  = false;
   }, []);
 
-  const handleTouchMove = useCallback((e) => {
-    if (!dragStartRef.current) return;
-    const t = e.touches ? e.touches[0] : e;
-    dragCurrentRef.current = { x: t.clientX, y: t.clientY };
-    const dy = Math.abs(t.clientY - dragStartRef.current.y);
-    const dx = Math.abs(t.clientX - dragStartRef.current.x);
-    if (dy > 10 && dy > dx) {
+  const handlePointerMove = useCallback((e) => {
+    if (!dragStartRef.current || !e.isPrimary) return;
+    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
+    const dy = Math.abs(e.clientY - dragStartRef.current.y);
+    const dx = Math.abs(e.clientX - dragStartRef.current.x);
+    if (dy > 8 && dy > dx) {
       isDraggingRef.current = true;
-      if (e.cancelable) e.preventDefault();
+      e.preventDefault();             // ページスクロール防止
     }
   }, []);
 
-  const handleTouchEnd = useCallback((e) => {
-    if (!dragStartRef.current) return;
-    const start   = dragStartRef.current;
-    const current = dragCurrentRef.current || start;
-    const dy      = current.y - start.y;
-    const dx      = Math.abs(current.x - start.x);
-    const elapsed = Date.now() - start.time;
-
-    // ダブルタップ判定
-    if (!isDraggingRef.current && elapsed < 300 && Math.abs(dy) < 10 && dx < 10) {
-      handleDoubleTap(currentCard);
-    }
-    // スワイプ判定（縦方向が横方向より大きく、速いか十分な距離）
-    else if (isDraggingRef.current && Math.abs(dy) > dx) {
-      if ((dy < -50 && elapsed < 500) || dy < -120) goNext();
-      else if ((dy > 50  && elapsed < 500) || dy > 120)  goPrev();
-    }
+  const handlePointerUp = useCallback((e) => {
+    if (!dragStartRef.current || !e.isPrimary) return;
+    const start      = dragStartRef.current;
+    const current    = dragCurrentRef.current || start;
+    const dy         = current.y - start.y;
+    const dx         = Math.abs(current.x - start.x);
+    const elapsed    = Date.now() - start.time;
+    const wasDragging = isDraggingRef.current; // リセット前に保存
 
     dragStartRef.current   = null;
     dragCurrentRef.current = null;
     isDraggingRef.current  = false;
+
+    if (wasDragging && Math.abs(dy) > dx) {
+      // ─ スワイプ ─
+      if ((dy < -50 && elapsed < 500) || dy < -120) goNext();
+      else if ((dy > 50 && elapsed < 500) || dy > 120) goPrev();
+    } else if (!wasDragging && elapsed < 350 && Math.abs(dy) < 12 && dx < 12) {
+      // ─ タップ（ダブルタップ判定） ─
+      handleDoubleTap(currentCard);
+    }
   }, [goNext, goPrev, handleDoubleTap, currentCard]);
+
+  const handlePointerCancel = useCallback(() => {
+    dragStartRef.current   = null;
+    dragCurrentRef.current = null;
+    isDraggingRef.current  = false;
+  }, []);
 
   const handleClearLiked = () => {
     if (window.confirm(`いいね ${liked.length} 件をクリアしますか？`)) setLiked([]);
@@ -613,19 +622,15 @@ export default function SwipeApp({ onNavigate }) {
   return (
     <div
       className="app app--shortform"
-      onMouseDown={activeTab === "feed" ? handleTouchStart : undefined}
-      onMouseMove={activeTab === "feed" ? (e) => { if (dragStartRef.current) handleTouchMove(e); } : undefined}
-      onMouseUp={activeTab === "feed" ? handleTouchEnd : undefined}
-      onMouseLeave={activeTab === "feed" ? (e) => { if (dragStartRef.current) handleTouchEnd(e); } : undefined}
-      onTouchStart={activeTab === "feed" ? handleTouchStart : undefined}
-      onTouchMove={activeTab === "feed" ? handleTouchMove : undefined}
-      onTouchEnd={activeTab === "feed" ? handleTouchEnd : undefined}
+      onPointerDown={activeTab === "feed" ? handlePointerDown : undefined}
+      onPointerMove={activeTab === "feed" ? handlePointerMove : undefined}
+      onPointerUp={activeTab === "feed" ? handlePointerUp : undefined}
+      onPointerCancel={activeTab === "feed" ? handlePointerCancel : undefined}
     >
       {/* ── ヘッダー（スワイプ誤動作を防ぐ）── */}
       <header
         className="header header--shortform"
-        onMouseDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <button className="header-logo header-logo--btn" onClick={() => onNavigate && onNavigate("home")}>
           ⚡ {appConfig.appName}
