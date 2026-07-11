@@ -617,7 +617,7 @@ export default function SwipeApp({ onNavigate }) {
 
   return (
     <div
-      className="app app--shortform"
+      className={`app app--shortform${activeTab === "feed" ? " is-feed" : ""}`}
       onPointerDown={activeTab === "feed" ? handlePointerDown : undefined}
       onPointerMove={activeTab === "feed" ? handlePointerMove : undefined}
       onPointerUp={activeTab === "feed" ? handlePointerUp : undefined}
@@ -703,14 +703,6 @@ export default function SwipeApp({ onNavigate }) {
         <LikedPage liked={liked} onClear={handleClearLiked} onRemove={handleRemoveFromLiked} />
       )}
 
-      {/* ── 注意文 ───────────────────────────────────── */}
-      <footer className="swipe-footer">
-        <p className="swipe-notice">
-          {appConfig.appName}は成人向け作品のサンプル動画を探せる非公式サービスです。
-          18歳未満の方は利用できません。FANZA公式サービスではありません。
-          詳細リンクは通常の商品ページURLを使用しています。
-        </p>
-      </footer>
     </div>
   );
 }
