@@ -1503,3 +1503,125 @@ html, body, #root {
 }
 .liked-card-remove:hover  { background: rgba(255, 60, 60, 0.35); }
 .liked-card-remove:active { transform: scale(0.84); }
+
+/* ════════════════════════════════════════════════════════════
+   App.css 追記分  ─  EroPick v0.8
+   既存 App.css の末尾にこの内容を追記してください
+   ════════════════════════════════════════════════════════════ */
+
+/* ─── iframe型カードのレイアウト修正 ──────────────────────────
+   問題：card-overlay が position:absolute;bottom:0 のため
+         iframeの下に黒い空白が大量発生していた
+   解決：iframe型のみ通常フロー（relative）に切り替える       */
+
+.card-inner--iframe {
+  overflow-y: auto;
+}
+
+/* overlay を絶対配置→通常フローに変更（iframeの直下に配置） */
+.card-inner--iframe .card-overlay {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  background: #0d0d0d;   /* グラデーション不要なので単色 */
+  padding: 12px 12px 4px;
+}
+.card-inner--iframe .card-overlay::before {
+  display: none;         /* グラデーション疑似要素があれば除去 */
+}
+
+/* テキスト右端はボタン分の余白不要（ボタンが右フロートしないので） */
+.card-inner--iframe .card-body {
+  padding-right: 12px;
+}
+
+/* ♥ボタンも通常フロー（右端に寄せる） */
+.card-inner--iframe .card-actions {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  flex-direction: row;
+  justify-content: flex-end;
+  padding: 8px 12px 12px;
+  gap: 0;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ─── 動画ラッパー（video型）──────────────────────────────── */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.video-wrapper .card-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ─── 再生/停止ボタン（PCクリックしやすい） ────────────────── */
+.btn-play-pause {
+  position: absolute;
+  bottom: 48px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+  z-index: 10;
+}
+.btn-play-pause:hover  { background: rgba(0, 0, 0, 0.75); }
+.btn-play-pause:active { transform: scale(0.88); }
+.btn-play-pause--playing { background: rgba(255,255,255,0.15); }
+
+/* ─── ♥ボタン単独（カード右下）────────────────────────────── */
+.card-actions {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* video型のcard-bodyはボタン分の余白を確保 */
+.card-inner:not(.card-inner--iframe) .card-body {
+  padding-right: 68px;
+}
+
+/* ─── いいね一覧：個別削除 ──────────────────────────────── */
+.liked-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.liked-card-remove {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,60,60,0.15);
+  color: rgba(255,100,100,0.9);
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+.liked-card-remove:hover  { background: rgba(255,60,60,0.35); }
+.liked-card-remove:active { transform: scale(0.84); }

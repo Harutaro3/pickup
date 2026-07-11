@@ -191,7 +191,7 @@ function LikedPage({ liked, onClear, onRemove }) {
 }
 
 // ─── CardContent ──────────────────────────────────────────────
-function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp, onThumbsDown, videoRef }) {
+function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
   const isIframe = card.sampleType === "iframe" && card.videoSrc;
   const outbound = getOutboundUrl(card);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
@@ -218,7 +218,6 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp
             onPause={() => setIsVideoPlaying(false)}
             onClick={(e) => e.stopPropagation()}
           />
-          {/* 大きな再生/停止ボタン（PCでクリックしやすい） */}
           <button
             className={`btn-play-pause ${isVideoPlaying ? "btn-play-pause--playing" : ""}`}
             onClick={handlePlayPause}
@@ -256,18 +255,17 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp
   };
 
   return (
-    <div className="card-inner">
-      {/* いいねフラッシュ演出 */}
+    <div className={`card-inner${isIframe ? " card-inner--iframe" : ""}`}>
       {likeFlash && (
         <div className="like-flash">♥</div>
       )}
 
-      {/* ── Layer 1: メディア（video / iframe / thumbnail）── */}
+      {/* Layer 1: メディア */}
       <div className={isIframe ? "card-media card-media--iframe" : "card-media"}>
         {renderMedia()}
       </div>
 
-      {/* ── Layer 2: テキスト情報（下部グラデーション）── */}
+      {/* Layer 2: テキスト情報 */}
       <div className="card-overlay">
         <div className="card-body">
           <h2 className="card-title">{card.title}</h2>
@@ -301,23 +299,13 @@ function CardContent({ card, isLiked, likeFlash, onDoubleTap, onLike, onThumbsUp
         </div>
       </div>
 
-      {/* ── Layer 3: アクションボタン（右側固定・テキストと分離）── */}
+      {/* Layer 3: ♥ボタンのみ */}
       <div className="card-actions" onPointerDown={(e) => e.stopPropagation()}>
         <button
           className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
           onClick={(e) => { e.stopPropagation(); onLike(); }}
           aria-label="保存"
         >♥</button>
-        <button
-          className="btn-thumbs btn-thumbs--up"
-          onClick={(e) => { e.stopPropagation(); onThumbsUp(); }}
-          aria-label="好き"
-        >👍</button>
-        <button
-          className="btn-thumbs btn-thumbs--down"
-          onClick={(e) => { e.stopPropagation(); onThumbsDown(); }}
-          aria-label="スキップ"
-        >👎</button>
       </div>
     </div>
   );
@@ -351,6 +339,7 @@ export default function SwipeApp({ onNavigate }) {
   const dragStartRef    = useRef(null);
   const dragCurrentRef  = useRef(null);
   const isDraggingRef   = useRef(false);
+  const wheelCooldown   = useRef(false);   // ホイール連続発火防止
 
   useEffect(() => { cardsRef.current = cards; }, [cards]);
   useEffect(() => { return () => { revokeLocalCardUrls(cardsRef.current); }; }, []); // eslint-disable-line
@@ -511,18 +500,6 @@ export default function SwipeApp({ onNavigate }) {
     }
   }, [applyTagDelta]);
 
-  // ─── 👍 好き / 👎 スキップ（タグ学習） ────────────────────────
-  const handleThumbsUp = useCallback((card) => {
-    if (!card) return;
-    applyTagDelta(card, 1);
-  }, [applyTagDelta]);
-
-  const handleThumbsDown = useCallback((card) => {
-    if (!card) return;
-    applyTagDelta(card, -1);
-    goNext();
-  }, [applyTagDelta, goNext]);
-
   const handleDoubleTap = useCallback((card) => {
     const now = Date.now();
     if (now - lastTapRef.current < 300) {
@@ -531,15 +508,17 @@ export default function SwipeApp({ onNavigate }) {
     lastTapRef.current = now;
   }, [handleLike]);
 
-  // ─── キーボード ───────────────────────────────────────────────
+  // ─── キーボード + マウスホイール ─────────────────────────────
   useEffect(() => {
     const onKey = (e) => {
       if (activeTab !== "feed") return;
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (["input","textarea","select","video"].includes(tag)) return;
       switch (e.key) {
-        case "ArrowUp":   case "w": case "W": e.preventDefault(); goNext(); break;
-        case "ArrowDown": case "s": case "S": e.preventDefault(); goPrev(); break;
+        // ArrowDown / S = 次へ（ホイール下と同じ方向に統一）
+        case "ArrowDown": case "s": case "S": e.preventDefault(); goNext(); break;
+        // ArrowUp   / W = 前へ
+        case "ArrowUp":   case "w": case "W": e.preventDefault(); goPrev(); break;
         case " ": // スペースキーでいいね
           e.preventDefault();
           if (currentCard) handleLike(currentCard);
@@ -547,8 +526,25 @@ export default function SwipeApp({ onNavigate }) {
         default: break;
       }
     };
+
+    // マウスホイール：連続発火を cooldown で防止
+    const onWheel = (e) => {
+      if (activeTab !== "feed") return;
+      if (isAnimatingRef.current || wheelCooldown.current) return;
+      if (Math.abs(e.deltaY) < 20) return;   // 微小スクロールは無視
+      e.preventDefault();
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 450);
+      if (e.deltaY > 0) goNext();            // 下スクロール = 次へ
+      else               goPrev();           // 上スクロール = 前へ
+    };
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
+    };
   }, [goNext, goPrev, handleLike, activeTab, currentCard]);
 
   // ─── ポインター操作（PC・スマホ統合）────────────────────────
@@ -681,10 +677,7 @@ export default function SwipeApp({ onNavigate }) {
                 card={currentCard}
                 isLiked={isCurrentLiked}
                 likeFlash={likeFlashId === currentCard.id}
-                onDoubleTap={() => handleDoubleTap(currentCard)}
                 onLike={() => handleLike(currentCard)}
-                onThumbsUp={() => handleThumbsUp(currentCard)}
-                onThumbsDown={() => handleThumbsDown(currentCard)}
                 videoRef={videoRef}
               />
             </div>
