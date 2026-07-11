@@ -1,6 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-// server/lib/fanzaClient.js
+// server/lib/fanzaClient.js  v1.0
 // FANZA API への HTTP リクエストとモックカード生成
+//
+// v1.0 変更点：
+//   ランダム取得時、カタログの離れた「複数地点」から少しずつ
+//   サンプリングする方式に変更（マルチポイントサンプリング）。
+//   旧方式は単一ランダム地点から連続100〜300件を取得していたため、
+//   同日リリースの同ジャンル群（カタログ上で隣接）に偏っていた。
 // ─────────────────────────────────────────────────────────────
 
 const https = require("https");
@@ -12,6 +18,8 @@ const EXCLUDE_FREE_ITEMS      = process.env.EXCLUDE_FREE_ITEMS !== "false";
 const MAX_FETCH_PAGES         = Math.max(Number(process.env.MAX_FETCH_PAGES) || 3, 1);
 const FANZA_RANDOM_OFFSET     = process.env.FANZA_RANDOM_OFFSET !== "false";
 const FANZA_RANDOM_OFFSET_MAX = Math.min(Number(process.env.FANZA_RANDOM_OFFSET_MAX) || 5000, 50000);
+// ランダム取得時に何地点からサンプリングするか（多いほど分散、APIコール増）
+const FANZA_SAMPLE_POINTS     = Math.min(Math.max(Number(process.env.FANZA_SAMPLE_POINTS) || 4, 1), 8);
 
 const FANZA_DEFAULTS = {
   site:    process.env.FANZA_SITE    || "FANZA",
@@ -23,13 +31,37 @@ const FANZA_DEFAULTS = {
 // ── HTTPS GET ────────────────────────────────────────────────
 function fetchUrl(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { "User-Agent": "EroPick/0.3" } }, (res) => {
+    https.get(url, { headers: { "User-Agent": "EroPick/1.0" } }, (res) => {
       const chunks = [];
       res.on("data", (c) => chunks.push(c));
       res.on("end",  () => resolve(Buffer.concat(chunks).toString("utf8")));
       res.on("error", reject);
     }).on("error", reject);
   });
+}
+
+/** Fisher-Yates シャッフル */
+function shuffle(array) {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/** 重複しないランダムオフセットを n 個生成（互いに最低200離す） */
+function pickSamplePoints(n, max) {
+  const points = [];
+  let guard = 0;
+  while (points.length < n && guard < 100) {
+    guard++;
+    const p = Math.floor(Math.random() * max) + 1;
+    if (points.every((q) => Math.abs(q - p) >= 200)) points.push(p);
+  }
+  // 足りなければ間隔条件を捨てて埋める
+  while (points.length < n) points.push(Math.floor(Math.random() * max) + 1);
+  return points;
 }
 
 // ── FANZAサンプル取得（メイン処理）──────────────────────────────
@@ -48,17 +80,23 @@ async function getFanzaSamples(query) {
   const keyword = query.keyword || "";
   const order   = (["api","random","diverse"].includes(query.order)) ? query.order : (process.env.FEED_ORDER_MODE || "diverse");
 
-  const useRandom   = query.random !== "false" && FANZA_RANDOM_OFFSET;
-  const startOffset = useRandom
-    ? Math.floor(Math.random() * FANZA_RANDOM_OFFSET_MAX) + 1
-    : Math.max(Number(query.offset) || 1, 1);
+  const useRandom = query.random !== "false" && FANZA_RANDOM_OFFSET;
 
-  const queryInfo = { site, service, floor, sort, keyword, offsetUsed: startOffset, random: useRandom, order };
+  // ── 取得地点の決定 ──────────────────────────────────────────
+  //   ランダム時：離れた複数地点（マルチポイントサンプリング）
+  //   通常時    ：指定オフセットから連続ページング（fetchMore用）
+  const offsets = useRandom
+    ? pickSamplePoints(FANZA_SAMPLE_POINTS, FANZA_RANDOM_OFFSET_MAX)
+    : [Math.max(Number(query.offset) || 1, 1)];
+
+  const queryInfo = {
+    site, service, floor, sort, keyword,
+    offsetUsed: offsets[0], samplePoints: offsets, random: useRandom, order,
+  };
   const fetchPerPage = 100;
 
   let totalItems = 0, totalSampleFound = 0, totalFreeExcluded = 0, totalDuplicateExcluded = 0, apiTotalCount = 0;
-  const collected = [];
-  const seenSet   = new Set();
+  const seenSet = new Set();
 
   function addToSeen(card) {
     if (card.id)        seenSet.add(`id:${card.id}`);
@@ -66,14 +104,14 @@ async function getFanzaSamples(query) {
     if (card.normalURL) seenSet.add(`u:${card.normalURL}`);
   }
   function isSeenCard(card) {
-    if (card.id        && seenSet.has(`id:${card.id}`))        return true;
-    if (card.videoSrc  && seenSet.has(`v:${card.videoSrc}`))   return true;
-    if (card.normalURL && seenSet.has(`u:${card.normalURL}`))  return true;
+    if (card.id        && seenSet.has(`id:${card.id}`))       return true;
+    if (card.videoSrc  && seenSet.has(`v:${card.videoSrc}`))  return true;
+    if (card.normalURL && seenSet.has(`u:${card.normalURL}`)) return true;
     return false;
   }
 
-  for (let page = 0; page < MAX_FETCH_PAGES && collected.length < hits; page++) {
-    const pageOffset = startOffset + page * fetchPerPage;
+  /** 1ページ分を取得してカード化（重複・無料・サンプル無しを除外） */
+  async function fetchPage(pageOffset) {
     const params = new URLSearchParams({
       api_id: apiId, affiliate_id: affiliateId,
       site, service, floor, sort,
@@ -83,15 +121,15 @@ async function getFanzaSamples(query) {
 
     const raw  = await fetchUrl(`https://api.dmm.com/affiliate/v3/ItemList?${params.toString()}`);
     const data = JSON.parse(raw);
-
     if (data.result?.status !== 200) {
-      return { status: 502, body: { error: `FANZA API エラー: status=${data.result?.status}` } };
+      throw new Error(`FANZA API エラー: status=${data.result?.status}`);
     }
 
     const items = data.result?.items ?? [];
     apiTotalCount = data.result?.total_count ?? apiTotalCount;
     totalItems   += items.length;
 
+    const pageCards = [];
     for (const item of items) {
       if (!resolveSampleMovie(item).videoSrc) continue;
       totalSampleFound++;
@@ -100,21 +138,62 @@ async function getFanzaSamples(query) {
       if (!card) continue;
       if (isSeenCard(card)) { totalDuplicateExcluded++; continue; }
       addToSeen(card);
-      collected.push(card);
-      if (collected.length >= hits) break;
+      pageCards.push(card);
     }
-    if (items.length < fetchPerPage) break;
+    return { pageCards, itemsCount: items.length };
+  }
+
+  const collected = [];
+
+  try {
+    if (useRandom) {
+      // ── マルチポイントサンプリング ────────────────────────────
+      //   各地点から並列で1ページずつ取得し、各地点から均等に採用。
+      //   地点ごとの上限 = ceil(hits / 地点数) + 少し余裕。
+      const perPoint = Math.ceil(hits / offsets.length) + 3;
+      const results  = await Promise.all(
+        offsets.map((off) => fetchPage(off).catch(() => ({ pageCards: [], itemsCount: 0 })))
+      );
+
+      // 各地点の結果をシャッフルし、ラウンドロビンで均等に混ぜる
+      const pools = results.map((r) => shuffle(r.pageCards).slice(0, perPoint));
+      let added = true;
+      while (collected.length < hits && added) {
+        added = false;
+        for (const pool of pools) {
+          if (pool.length === 0) continue;
+          collected.push(pool.shift());
+          added = true;
+          if (collected.length >= hits) break;
+        }
+      }
+    } else {
+      // ── 従来の連続ページング（fetchMore用）──────────────────
+      const startOffset = offsets[0];
+      for (let page = 0; page < MAX_FETCH_PAGES && collected.length < hits; page++) {
+        const { pageCards, itemsCount } = await fetchPage(startOffset + page * fetchPerPage);
+        for (const card of pageCards) {
+          collected.push(card);
+          if (collected.length >= hits) break;
+        }
+        if (itemsCount < fetchPerPage) break;
+      }
+    }
+  } catch (err) {
+    return { status: 502, body: { error: err.message } };
   }
 
   const rawCards   = collected.slice(0, hits);
   const cards      = applyFeedOrder(rawCards, order);
-  const nextOffset = startOffset + MAX_FETCH_PAGES * fetchPerPage;
+  const nextOffset = useRandom
+    ? Math.floor(Math.random() * FANZA_RANDOM_OFFSET_MAX) + 1  // 次回fetchMoreの起点もランダムに
+    : offsets[0] + MAX_FETCH_PAGES * fetchPerPage;
   const makerList  = [...new Set(cards.map((c) => c.maker).filter(Boolean))];
 
   return {
     status: 200,
     body: {
-      cards, total: apiTotalCount, offset: startOffset, hits, query: queryInfo,
+      cards, total: apiTotalCount, offset: offsets[0], hits, query: queryInfo,
       debug: {
         rawItemsCount: totalItems, sampleMovieFoundCount: totalSampleFound,
         freeExcludedCount: totalFreeExcluded, duplicateExcludedCount: totalDuplicateExcluded,
@@ -123,7 +202,7 @@ async function getFanzaSamples(query) {
         topMakers: topMakerCounts(cards),
         maxConsecutiveSameMaker: calcMaxConsecutiveSameMaker(cards),
         diverseLookback: DIVERSE_LOOKBACK,
-        offsetUsed: startOffset, nextOffset,
+        samplePoints: offsets, offsetUsed: offsets[0], nextOffset,
         firstItemPrice: cards[0]?.price ?? "",
         firstItemDeliveryPrice: cards[0]?.deliveryPrice ?? "",
       },

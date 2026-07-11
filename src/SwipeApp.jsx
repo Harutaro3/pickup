@@ -1,3 +1,18 @@
+// ═══════════════════════════════════════════════════════════════
+// src/SwipeApp.jsx  ─  EroPick v1.0（クリーン書き直し版）
+//
+// 操作仕様：
+//   縦スワイプ / ホイール / ↑↓キー … 前後のカードへ移動
+//   スワイプ可能領域 … 画面全域（iframe・ボタン・リンク・タブを除く）
+//   ダブルタップ / スペースキー     … いいねトグル
+//   ♥ボタン                        … いいねトグル
+//
+// 設計メモ：
+//   - Pointer Events に統一（PC / スマホ共通）
+//   - [data-no-swipe] を持つ要素上ではドラッグを開始しない
+//   - iframe 内のタッチは親に届かないため原理的にスワイプ不可
+//     （FANZA プレーヤー操作を優先する仕様）
+// ═══════════════════════════════════════════════════════════════
 import { useState, useRef, useEffect, useCallback } from "react";
 import "./App.css";
 import "./site.css";
@@ -7,12 +22,11 @@ const isDev = import.meta.env.DEV;
 const log = (...args) => { if (isDev) console.log(...args); };
 
 // ─── localStorage キー ────────────────────────────────────────
-const STORAGE_KEY         = "eropick_v3";
-const HISTORY_STORAGE_KEY = "eropick_history_v3";
+const STORAGE_KEY             = "eropick_v3";
 const OLD_STORAGE_KEY         = "quickpick_v3";
-const OLD_HISTORY_STORAGE_KEY = "quickpick_history_v3";
-const TAG_WEIGHTS_KEY         = "eropick_tagweights_v1"; // タグ重み（好み学習）
+const TAG_WEIGHTS_KEY         = "eropick_tagweights_v1";
 
+// ─── ストレージユーティリティ ─────────────────────────────────
 function loadStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(OLD_STORAGE_KEY);
@@ -25,16 +39,6 @@ function loadStorage() {
 }
 function saveStorage(liked) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ liked })); } catch {}
-}
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(HISTORY_STORAGE_KEY) || localStorage.getItem(OLD_HISTORY_STORAGE_KEY);
-    if (raw) { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; }
-  } catch {}
-  return [];
-}
-function saveHistory(history) {
-  try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history)); } catch {}
 }
 function toStorageItem(card) {
   return {
@@ -58,7 +62,7 @@ function _initialStorage() {
   return _storageCache;
 }
 
-// ─── タグ重み（好み学習） ──────────────────────────────────────
+// ─── タグ重み（好み学習）──────────────────────────────────────
 function loadTagWeights() {
   try {
     const raw = localStorage.getItem(TAG_WEIGHTS_KEY);
@@ -66,20 +70,22 @@ function loadTagWeights() {
   } catch { return {}; }
 }
 
-/** カードのタグスコアを計算（ジャンル + 出演者） */
+/** カードの生タグスコア（ジャンル + 出演者の重み合計） */
 function scoreItem(card, weights) {
   return [...(card.genres ?? []), ...(card.actresses ?? [])]
     .reduce((s, t) => s + (weights[t] ?? 0), 0);
 }
 
-// ─── 重複排除・並び替え ────────────────────────────────────────
-function getDedupeKeys(card) {
-  return [
-    card.id        ? `id:${card.id}`       : null,
-    card.videoSrc  ? `v:${card.videoSrc}`  : null,
-    card.normalURL ? `u:${card.normalURL}` : null,
-  ].filter(Boolean);
+/**
+ * ソフトスコア：log圧縮した重みスコア。
+ * 重みが育っても特定ジャンルが画面を独占しないよう影響を抑える。
+ */
+function softScore(card, weights) {
+  const s = scoreItem(card, weights);
+  return Math.sign(s) * Math.log1p(Math.abs(s));
 }
+
+/** Fisher-Yates シャッフル */
 function shuffleArray(array) {
   const arr = [...array];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -88,41 +94,33 @@ function shuffleArray(array) {
   }
   return arr;
 }
-function hasIntersection(a, b) {
-  if (!a.length || !b.length) return false;
-  const setA = new Set(a);
-  return b.some((v) => setA.has(v));
+
+/**
+ * 好み反映ソート：
+ *   シャッフル → ソフトスコア降順（安定ソート）
+ *   同スコア帯の順序はランダムになり、重みゼロの初回は完全ランダム。
+ */
+function personalizeOrder(cards, weights) {
+  return shuffleArray(cards).sort((a, b) => softScore(b, weights) - softScore(a, weights));
 }
-function reorderDiverse(cards) {
-  const pool = shuffleArray(cards);
-  const result = [];
-  while (pool.length > 0) {
-    const prev = result[result.length - 1];
-    let index = 0;
-    if (prev) {
-      const pi = pool.findIndex((c) => {
-        return !(prev.maker  && c.maker  && prev.maker  === c.maker) &&
-               !(prev.series && c.series && prev.series === c.series) &&
-               !hasIntersection(prev.actresses || [], c.actresses || []);
-      });
-      if (pi >= 0) index = pi;
-    }
-    result.push(pool.splice(index, 1)[0]);
-  }
-  return result;
+
+// ─── 重複排除・既読ユーティリティ ─────────────────────────────
+function getDedupeKeys(card) {
+  const keys = [];
+  if (card.id)        keys.push(`id:${card.id}`);
+  if (card.videoSrc)  keys.push(`v:${card.videoSrc}`);
+  if (card.normalURL) keys.push(`u:${card.normalURL}`);
+  return keys;
 }
 function appendUniqueCards(existingCards, newCards) {
-  const seenSet = new Set();
-  for (const c of existingCards) {
-    for (const k of getDedupeKeys(c)) seenSet.add(k);
-  }
+  const seenSet = new Set(existingCards.flatMap(getDedupeKeys));
   const uniqueNew = newCards.filter((c) => {
     const keys = getDedupeKeys(c);
     if (keys.some((k) => seenSet.has(k))) return false;
     keys.forEach((k) => seenSet.add(k));
     return true;
   });
-  return [...existingCards, ...reorderDiverse(uniqueNew)];
+  return [...existingCards, ...uniqueNew];
 }
 function sortBySeenStatus(cards, seenIds) {
   if (seenIds.size === 0) return cards;
@@ -133,7 +131,9 @@ function sortBySeenStatus(cards, seenIds) {
   return [...fresh, ...seen];
 }
 
-// ─── 好き一覧ページ ────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// いいね一覧ページ
+// ═══════════════════════════════════════════════════════════════
 function LikedPage({ liked, onClear, onRemove }) {
   if (liked.length === 0) {
     return (
@@ -190,7 +190,12 @@ function LikedPage({ liked, onClear, onRemove }) {
   );
 }
 
-// ─── CardContent ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// カード表示
+//   構造（縦フロー）：
+//     card-media（video / iframe / thumbnail）
+//     card-overlay（タイトル・タグ・詳細リンク ＋ ♥）
+// ═══════════════════════════════════════════════════════════════
 function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
   const isIframe = card.sampleType === "iframe" && card.videoSrc;
   const outbound = getOutboundUrl(card);
@@ -216,11 +221,11 @@ function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
             className="card-video"
             onPlay={() => setIsVideoPlaying(true)}
             onPause={() => setIsVideoPlaying(false)}
-            onClick={(e) => e.stopPropagation()}
           />
           <button
             className={`btn-play-pause ${isVideoPlaying ? "btn-play-pause--playing" : ""}`}
             onClick={handlePlayPause}
+            data-no-swipe
             aria-label={isVideoPlaying ? "停止" : "再生"}
           >
             {isVideoPlaying ? "⏸" : "▶"}
@@ -255,17 +260,18 @@ function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
   };
 
   return (
-    <div className={`card-inner${isIframe ? " card-inner--iframe" : ""}`}>
-      {likeFlash && (
-        <div className="like-flash">♥</div>
-      )}
+    <div className="card-inner">
+      {likeFlash && <div className="like-flash">♥</div>}
 
-      {/* Layer 1: メディア */}
-      <div className={isIframe ? "card-media card-media--iframe" : "card-media"}>
+      {/* メディア（iframe は data-no-swipe：プレーヤー操作を優先） */}
+      <div
+        className={isIframe ? "card-media card-media--iframe" : "card-media"}
+        {...(isIframe ? { "data-no-swipe": true } : {})}
+      >
         {renderMedia()}
       </div>
 
-      {/* Layer 2: テキスト情報 */}
+      {/* 情報（タイトル・タグ・リンク・♥）：この領域はスワイプ可能 */}
       <div className="card-overlay">
         <div className="card-body">
           <h2 className="card-title">{card.title}</h2>
@@ -291,34 +297,39 @@ function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
             ))}
           </div>
           {outbound && (
-            <a href={outbound} target="_blank" rel="noopener noreferrer"
-               className="card-detail-link" onClick={(e) => e.stopPropagation()}>
+            <a
+              href={outbound}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="card-detail-link"
+              data-no-swipe
+            >
               詳細を見る →
             </a>
           )}
         </div>
-      </div>
 
-      {/* Layer 3: ♥ボタンのみ */}
-      <div className="card-actions" onPointerDown={(e) => e.stopPropagation()}>
         <button
           className={`btn-heart ${isLiked ? "btn-heart--active" : ""}`}
-          onClick={(e) => { e.stopPropagation(); onLike(); }}
-          aria-label="保存"
+          onClick={onLike}
+          data-no-swipe
+          aria-label="いいね"
         >♥</button>
       </div>
     </div>
   );
 }
 
-// ─── メインアプリ ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// メインアプリ
+// ═══════════════════════════════════════════════════════════════
 export default function SwipeApp({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("feed");
   const [cards, setCards]         = useState([]);
   const [current, setCurrent]     = useState(0);
   const [liked, setLiked]         = useState(() => _initialStorage().liked);
-  const [tagWeights, setTagWeights] = useState(() => loadTagWeights()); // 好みタグ重み
-  const [likeFlashId, setLikeFlashId] = useState(null); // ダブルタップ演出用
+  const [tagWeights, setTagWeights] = useState(() => loadTagWeights());
+  const [likeFlashId, setLikeFlashId] = useState(null);
   const [swipeDir, setSwipeDir]   = useState(null); // "up" | "down"
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -332,16 +343,16 @@ export default function SwipeApp({ onNavigate }) {
   const cardsRef        = useRef(cards);
   const isAnimatingRef  = useRef(false);
   const videoRef        = useRef(null);
-  const tagWeightsRef   = useRef(tagWeights); // fetchMore 内で最新値を参照
-  // ダブルタップ検出用
+  const tagWeightsRef   = useRef(tagWeights);
+  const wheelCooldown   = useRef(false);
   const lastTapRef      = useRef(0);
-  // ドラッグ用
-  const dragStartRef    = useRef(null);
+  const dragRef         = useRef(null);   // { x, y, time } | null
   const dragCurrentRef  = useRef(null);
   const isDraggingRef   = useRef(false);
-  const wheelCooldown   = useRef(false);   // ホイール連続発火防止
+  const currentRef      = useRef(current);
 
   useEffect(() => { cardsRef.current = cards; }, [cards]);
+  useEffect(() => { currentRef.current = current; }, [current]);
   useEffect(() => { return () => { revokeLocalCardUrls(cardsRef.current); }; }, []); // eslint-disable-line
   useEffect(() => { saveStorage(liked); }, [liked]);
   useEffect(() => {
@@ -349,25 +360,16 @@ export default function SwipeApp({ onNavigate }) {
     try { localStorage.setItem(TAG_WEIGHTS_KEY, JSON.stringify(tagWeights)); } catch {}
   }, [tagWeights]);
 
-  // 表示中の履歴（decisionHistoryの代わり - seenIds管理用）
+  // 既読ID（likedベース）
   const seenIdsRef = useRef(new Set(liked.map((c) => c.id)));
   useEffect(() => {
     seenIdsRef.current = new Set(liked.map((c) => c.id));
   }, [liked]);
 
-  const currentCard  = cards[current];
-  const isAtEnd      = current >= cards.length && cards.length > 0;
-  const isAtStart    = current === 0;
+  const currentCard = cards[current];
+  const isAtEnd     = current >= cards.length && cards.length > 0;
 
-  // ─── 年齢確認後に自動取得 ────────────────────────────────────
-  useEffect(() => {
-    if (!hasAutoLoaded.current && !isFetchingFanza) {
-      hasAutoLoaded.current = true;
-      handleLoadFanza();
-    }
-  }, []); // eslint-disable-line
-
-  // ─── FANZA API 取得 ──────────────────────────────────────────
+  // ─── FANZA API ────────────────────────────────────────────
   async function fetchFanzaCards({ offset = 1, random = false } = {}) {
     const params = new URLSearchParams({ hits: String(fanzaHits) });
     if (random) { params.set("random", "true"); }
@@ -380,7 +382,7 @@ export default function SwipeApp({ onNavigate }) {
     return res.json();
   }
 
-  const handleLoadFanza = async () => {
+  const handleLoadFanza = useCallback(async () => {
     if (isFetchingFanza) return;
     setIsFetchingFanza(true);
     setFanzaError(null);
@@ -389,10 +391,8 @@ export default function SwipeApp({ onNavigate }) {
       const data = await fetchFanzaCards({ random: true });
       fanzaOffsetRef.current = data.debug?.nextOffset || (data.offset ?? 1) + fanzaHits;
       if (isDev && data.debug) log("[fanza] debug:", data.debug);
-      const weightSorted = [...data.cards].sort(
-        (a, b) => scoreItem(b, tagWeightsRef.current) - scoreItem(a, tagWeightsRef.current)
-      );
-      const sorted = sortBySeenStatus(weightSorted, seenIdsRef.current);
+      const personalized = personalizeOrder(data.cards, tagWeightsRef.current);
+      const sorted = sortBySeenStatus(personalized, seenIdsRef.current);
       setCards(sorted);
       setCurrent(0);
       setSwipeDir(null);
@@ -403,25 +403,31 @@ export default function SwipeApp({ onNavigate }) {
     } finally {
       setIsFetchingFanza(false);
     }
-  };
+  }, [isFetchingFanza]); // eslint-disable-line
 
   const fetchMoreFanza = useCallback(async () => {
     if (isFetchingMore) return;
     setIsFetchingMore(true);
     try {
-      const offset = fanzaOffsetRef.current;
-      const data   = await fetchFanzaCards({ offset, random: false });
-      fanzaOffsetRef.current = data.debug?.nextOffset || (offset + fanzaHits);
-      const weightSorted = [...data.cards].sort(
-        (a, b) => scoreItem(b, tagWeightsRef.current) - scoreItem(a, tagWeightsRef.current)
-      );
-      setCards((prev) => appendUniqueCards(prev, weightSorted));
+      // 追加取得もランダム（マルチポイント）で偏りを防ぐ
+      const data = await fetchFanzaCards({ random: true });
+      fanzaOffsetRef.current = data.debug?.nextOffset || (fanzaOffsetRef.current + fanzaHits);
+      const personalized = personalizeOrder(data.cards, tagWeightsRef.current);
+      setCards((prev) => appendUniqueCards(prev, personalized));
     } catch (err) {
       log("[fanza] fetchMore error:", err.message);
     } finally {
       setIsFetchingMore(false);
     }
   }, [isFetchingMore]); // eslint-disable-line
+
+  // ─── 初回自動取得 ─────────────────────────────────────────
+  useEffect(() => {
+    if (!hasAutoLoaded.current) {
+      hasAutoLoaded.current = true;
+      handleLoadFanza();
+    }
+  }, [handleLoadFanza]);
 
   // 残り5件以下で追加取得
   useEffect(() => {
@@ -432,43 +438,37 @@ export default function SwipeApp({ onNavigate }) {
     }
   }, [current, cards.length]); // eslint-disable-line
 
-  // ─── 次へ / 前へ ─────────────────────────────────────────────
+  // ─── 前後移動 ─────────────────────────────────────────────
+  const animateTo = useCallback((dir, nextIndex) => {
+    isAnimatingRef.current = true;
+    setIsAnimating(true);
+    setSwipeDir(dir);
+    const video = videoRef.current;
+    if (video) { try { video.pause(); video.currentTime = 0; } catch {} }
+    setTimeout(() => {
+      setCurrent(nextIndex);
+      setSwipeDir(null);
+      isAnimatingRef.current = false;
+      setIsAnimating(false);
+    }, 280);
+  }, []);
+
   const goNext = useCallback(() => {
     if (isAnimatingRef.current) return;
-    if (current >= cards.length - 1 && !isFetchingMore) return;
-    const video = videoRef.current;
-    if (video) { try { video.pause(); video.currentTime = 0; } catch {} }
-    isAnimatingRef.current = true;
-    setIsAnimating(true);
-    setSwipeDir("up");
-    setTimeout(() => {
-      setCurrent((prev) => prev + 1);
-      setSwipeDir(null);
-      requestAnimationFrame(() => {
-        isAnimatingRef.current = false;
-        setIsAnimating(false);
-      });
-    }, 300);
-  }, [cards.length, current, isFetchingMore]);
+    const total = cardsRef.current.length;
+    const cur = currentRef.current;
+    if (cur >= total - 1) return;   // 末尾（fetchMore待ち）
+    animateTo("up", cur + 1);
+  }, [animateTo]);
 
   const goPrev = useCallback(() => {
-    if (isAnimatingRef.current || current === 0) return;
-    const video = videoRef.current;
-    if (video) { try { video.pause(); video.currentTime = 0; } catch {} }
-    isAnimatingRef.current = true;
-    setIsAnimating(true);
-    setSwipeDir("down");
-    setTimeout(() => {
-      setCurrent((prev) => prev - 1);
-      setSwipeDir(null);
-      requestAnimationFrame(() => {
-        isAnimatingRef.current = false;
-        setIsAnimating(false);
-      });
-    }, 300);
-  }, [current]);
+    if (isAnimatingRef.current) return;
+    const cur = currentRef.current;
+    if (cur <= 0) return;
+    animateTo("down", cur - 1);
+  }, [animateTo]);
 
-  // ─── タグ重み更新（好み学習）─────────────────────────────────
+  // ─── いいね（トグル）──────────────────────────────────────
   const applyTagDelta = useCallback((card, delta) => {
     const tags = [...(card.genres ?? []), ...(card.actresses ?? [])];
     if (tags.length === 0) return;
@@ -479,17 +479,13 @@ export default function SwipeApp({ onNavigate }) {
     });
   }, []);
 
-  // ─── いいね（トグル方式）──────────────────────────────────────
   const handleLike = useCallback((card) => {
     if (!card) return;
-    const isCurrentlyLiked = seenIdsRef.current.has(card.id);
-
+    const isCurrentlyLiked = liked.some((c) => c.id === card.id);
     if (isCurrentlyLiked) {
-      // 取り消し：削除 + タグ -1（アニメなし）
       setLiked((prev) => prev.filter((c) => c.id !== card.id));
       applyTagDelta(card, -1);
     } else {
-      // いいね：追加 + タグ +1 + フラッシュ演出
       setLikeFlashId(card.id);
       setTimeout(() => setLikeFlashId(null), 600);
       setLiked((prev) => {
@@ -498,136 +494,128 @@ export default function SwipeApp({ onNavigate }) {
       });
       applyTagDelta(card, 1);
     }
-  }, [applyTagDelta]);
+  }, [liked, applyTagDelta]);
 
-  const handleDoubleTap = useCallback((card) => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      handleLike(card);
-    }
-    lastTapRef.current = now;
-  }, [handleLike]);
-
-  // ─── キーボード + マウスホイール ─────────────────────────────
-  useEffect(() => {
-    const onKey = (e) => {
-      if (activeTab !== "feed") return;
-      const tag = document.activeElement?.tagName?.toLowerCase();
-      if (["input","textarea","select","video"].includes(tag)) return;
-      switch (e.key) {
-        // ArrowDown / S = 次へ（ホイール下と同じ方向に統一）
-        case "ArrowDown": case "s": case "S": e.preventDefault(); goNext(); break;
-        // ArrowUp   / W = 前へ
-        case "ArrowUp":   case "w": case "W": e.preventDefault(); goPrev(); break;
-        case " ": // スペースキーでいいね
-          e.preventDefault();
-          if (currentCard) handleLike(currentCard);
-          break;
-        default: break;
-      }
-    };
-
-    // マウスホイール：連続発火を cooldown で防止
-    const onWheel = (e) => {
-      if (activeTab !== "feed") return;
-      if (isAnimatingRef.current || wheelCooldown.current) return;
-      if (Math.abs(e.deltaY) < 20) return;   // 微小スクロールは無視
-      e.preventDefault();
-      wheelCooldown.current = true;
-      setTimeout(() => { wheelCooldown.current = false; }, 450);
-      if (e.deltaY > 0) goNext();            // 下スクロール = 次へ
-      else               goPrev();           // 上スクロール = 前へ
-    };
-
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("wheel", onWheel);
-    };
-  }, [goNext, goPrev, handleLike, activeTab, currentCard]);
-
-  // ─── ポインター操作（PC・スマホ統合）────────────────────────
-  // Pointer Events API で mouse / touch を一本化。
-  // setPointerCapture でドラッグ中にポインタを見失わない。
-  const handlePointerDown = useCallback((e) => {
-    if (isAnimatingRef.current) return;
-    if (!e.isPrimary) return;          // マルチタッチは無視
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    dragStartRef.current   = { x: e.clientX, y: e.clientY, time: Date.now() };
-    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
-    isDraggingRef.current  = false;
-  }, []);
-
-  const handlePointerMove = useCallback((e) => {
-    if (!dragStartRef.current || !e.isPrimary) return;
-    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
-    const dy = Math.abs(e.clientY - dragStartRef.current.y);
-    const dx = Math.abs(e.clientX - dragStartRef.current.x);
-    if (dy > 8 && dy > dx) {
-      isDraggingRef.current = true;
-      e.preventDefault();             // ページスクロール防止
-    }
-  }, []);
-
-  const handlePointerUp = useCallback((e) => {
-    if (!dragStartRef.current || !e.isPrimary) return;
-    const start      = dragStartRef.current;
-    const current    = dragCurrentRef.current || start;
-    const dy         = current.y - start.y;
-    const dx         = Math.abs(current.x - start.x);
-    const elapsed    = Date.now() - start.time;
-    const wasDragging = isDraggingRef.current; // リセット前に保存
-
-    dragStartRef.current   = null;
-    dragCurrentRef.current = null;
-    isDraggingRef.current  = false;
-
-    if (wasDragging && Math.abs(dy) > dx) {
-      // ─ スワイプ ─
-      if ((dy < -50 && elapsed < 500) || dy < -120) goNext();
-      else if ((dy > 50 && elapsed < 500) || dy > 120) goPrev();
-    } else if (!wasDragging && elapsed < 350 && Math.abs(dy) < 12 && dx < 12) {
-      // ─ タップ（ダブルタップ判定） ─
-      handleDoubleTap(currentCard);
-    }
-  }, [goNext, goPrev, handleDoubleTap, currentCard]);
-
-  const handlePointerCancel = useCallback(() => {
-    dragStartRef.current   = null;
-    dragCurrentRef.current = null;
-    isDraggingRef.current  = false;
-  }, []);
-
-  const handleClearLiked = () => {
-    if (window.confirm(`いいね ${liked.length} 件をクリアしますか？`)) setLiked([]);
-  };
-
-  // 個別削除（タグ重みも-1して戻す）
+  // いいね一覧からの個別削除（タグ重みも戻す）
   const handleRemoveFromLiked = useCallback((id) => {
     const card = liked.find((c) => c.id === id);
     if (card) applyTagDelta(card, -1);
     setLiked((prev) => prev.filter((c) => c.id !== id));
   }, [liked, applyTagDelta]);
 
-  const likedIds = new Set(liked.map((c) => c.id));
-  const showLoading = isFetchingFanza && cards.length === 0;
-  const showEmpty   = !isFetchingFanza && !fanzaError && cards.length === 0;
+  const handleClearLiked = () => {
+    if (window.confirm(`いいね ${liked.length} 件をクリアしますか？`)) setLiked([]);
+  };
+
+  // ─── キーボード + ホイール ────────────────────────────────
+  useEffect(() => {
+    const onKey = (e) => {
+      if (activeTab !== "feed") return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (["input","textarea","select","video"].includes(tag)) return;
+      switch (e.key) {
+        case "ArrowDown": case "s": case "S": e.preventDefault(); goNext(); break;
+        case "ArrowUp":   case "w": case "W": e.preventDefault(); goPrev(); break;
+        case " ":
+          e.preventDefault();
+          { const c = cardsRef.current[currentRef.current]; if (c) handleLike(c); }
+          break;
+        default: break;
+      }
+    };
+    const onWheel = (e) => {
+      if (activeTab !== "feed") return;
+      if (isAnimatingRef.current || wheelCooldown.current) return;
+      if (Math.abs(e.deltaY) < 20) return;
+      e.preventDefault();
+      wheelCooldown.current = true;
+      setTimeout(() => { wheelCooldown.current = false; }, 450);
+      if (e.deltaY > 0) goNext(); else goPrev();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("wheel", onWheel);
+    };
+  }, [goNext, goPrev, handleLike, activeTab]);
+
+  // ─── ポインター操作（PC / スマホ統合）─────────────────────
+  const handlePointerDown = useCallback((e) => {
+    if (isAnimatingRef.current) return;
+    if (!e.isPrimary) return;
+    // ボタン・リンク・iframe など操作要素上ではドラッグを開始しない
+    if (e.target.closest("[data-no-swipe]")) return;
+    dragRef.current        = { x: e.clientX, y: e.clientY, time: Date.now() };
+    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
+    isDraggingRef.current  = false;
+  }, []);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!dragRef.current || !e.isPrimary) return;
+    dragCurrentRef.current = { x: e.clientX, y: e.clientY };
+    const dy = Math.abs(e.clientY - dragRef.current.y);
+    const dx = Math.abs(e.clientX - dragRef.current.x);
+    if (!isDraggingRef.current && dy > 8 && dy > dx) {
+      isDraggingRef.current = true;
+      // ドラッグ確定後にキャプチャ（ボタンのclickを邪魔しない）
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    }
+  }, []);
+
+  const handlePointerUp = useCallback((e) => {
+    if (!dragRef.current || !e.isPrimary) return;
+    const start       = dragRef.current;
+    const cur         = dragCurrentRef.current || start;
+    const dy          = cur.y - start.y;
+    const dx          = Math.abs(cur.x - start.x);
+    const elapsed     = Date.now() - start.time;
+    const wasDragging = isDraggingRef.current;
+
+    dragRef.current        = null;
+    dragCurrentRef.current = null;
+    isDraggingRef.current  = false;
+
+    if (wasDragging && Math.abs(dy) > dx) {
+      // スワイプ確定
+      if ((dy < -50 && elapsed < 500) || dy < -120) goNext();
+      else if ((dy > 50 && elapsed < 500) || dy > 120) goPrev();
+    } else if (!wasDragging && elapsed < 350 && Math.abs(dy) < 12 && dx < 12) {
+      // タップ → ダブルタップ判定
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        const card = cardsRef.current[currentRef.current];
+        if (card) handleLike(card);
+        lastTapRef.current = 0;
+      } else {
+        lastTapRef.current = now;
+      }
+    }
+  }, [goNext, goPrev, handleLike]);
+
+  const handlePointerCancel = useCallback(() => {
+    dragRef.current        = null;
+    dragCurrentRef.current = null;
+    isDraggingRef.current  = false;
+  }, []);
+
+  // ─── レンダリング ─────────────────────────────────────────
+  const likedIds       = new Set(liked.map((c) => c.id));
+  const showLoading    = isFetchingFanza && cards.length === 0;
+  const showEmpty      = !isFetchingFanza && !fanzaError && cards.length === 0;
   const isCurrentLiked = currentCard ? likedIds.has(currentCard.id) : false;
+  const isFeed         = activeTab === "feed";
 
   return (
     <div
-      className={`app app--shortform${activeTab === "feed" ? " is-feed" : ""}`}
-      onPointerDown={activeTab === "feed" ? handlePointerDown : undefined}
-      onPointerMove={activeTab === "feed" ? handlePointerMove : undefined}
-      onPointerUp={activeTab === "feed" ? handlePointerUp : undefined}
-      onPointerCancel={activeTab === "feed" ? handlePointerCancel : undefined}
+      className={`app app--shortform${isFeed ? " is-feed" : ""}`}
+      onPointerDown={isFeed ? handlePointerDown : undefined}
+      onPointerMove={isFeed ? handlePointerMove : undefined}
+      onPointerUp={isFeed ? handlePointerUp : undefined}
+      onPointerCancel={isFeed ? handlePointerCancel : undefined}
     >
-      {/* ── ヘッダー（スワイプ誤動作を防ぐ）── */}
-      <header
-        className="header header--shortform"
-        onPointerDown={(e) => e.stopPropagation()}
-      >
+      {/* ── ヘッダー ─────────────────────────────────── */}
+      <header className="header header--shortform" data-no-swipe>
         <button className="header-logo header-logo--btn" onClick={() => onNavigate && onNavigate("home")}>
           ⚡ {appConfig.appName}
         </button>
@@ -647,11 +635,11 @@ export default function SwipeApp({ onNavigate }) {
         </nav>
       </header>
 
-      {/* ════════════════ フィードタブ ════════════════ */}
+      {/* ════════ フィード ════════ */}
       {activeTab === "feed" && (
         <div className="shortform-stage">
           {fanzaError && (
-            <div className="error-banner" role="alert">
+            <div className="error-banner" role="alert" data-no-swipe>
               <span className="error-icon">⚠️</span>
               <span>{fanzaError}</span>
               <button className="error-close" onClick={() => { setFanzaError(null); handleLoadFanza(); }}>再試行</button>
@@ -666,11 +654,10 @@ export default function SwipeApp({ onNavigate }) {
           {showEmpty && (
             <div className="loading-screen">
               <p className="loading-text">表示できる動画がありませんでした。<br/>時間をおいて再度お試しください。</p>
-              <button className="btn-retry" onClick={handleLoadFanza}>再試行</button>
+              <button className="btn-retry" onClick={handleLoadFanza} data-no-swipe>再試行</button>
             </div>
           )}
 
-          {/* ── カード本体 ─────────────────────────────── */}
           {currentCard && (
             <div className={`shortform-card ${swipeDir === "up" ? "exit-up" : swipeDir === "down" ? "exit-down" : ""}`}>
               <CardContent
@@ -683,12 +670,11 @@ export default function SwipeApp({ onNavigate }) {
             </div>
           )}
 
-          {/* ── 見終わり ─────────────────────────────── */}
           {isAtEnd && !isFetchingFanza && (
             <div className="finished">
               <div className="finished-icon">🎉</div>
               <p className="finished-text">最後まで見ました</p>
-              <button className="btn-reset" onClick={handleLoadFanza}>もっと見る</button>
+              <button className="btn-reset" onClick={handleLoadFanza} data-no-swipe>もっと見る</button>
             </div>
           )}
 
@@ -698,11 +684,10 @@ export default function SwipeApp({ onNavigate }) {
         </div>
       )}
 
-      {/* ════════════════ いいね一覧タブ ════════════════ */}
+      {/* ════════ いいね一覧 ════════ */}
       {activeTab === "liked" && (
         <LikedPage liked={liked} onClear={handleClearLiked} onRemove={handleRemoveFromLiked} />
       )}
-
     </div>
   );
 }
