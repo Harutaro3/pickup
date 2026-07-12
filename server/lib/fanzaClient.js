@@ -78,20 +78,57 @@ async function getFanzaSamples(query) {
   const floor   = query.floor   || FANZA_DEFAULTS.floor;
   const sort    = query.sort    || FANZA_DEFAULTS.sort;
   const keyword = query.keyword || "";
-  const genreId = query.genreId || "";   // ジャンルID指定時は article=genre で厳密フィルタ
   const order   = (["api","random","diverse"].includes(query.order)) ? query.order : (process.env.FEED_ORDER_MODE || "diverse");
 
-  const useRandom = query.random !== "false" && FANZA_RANDOM_OFFSET;
+  // ── 複数選択フィルタ（ジャンル / 女優 / メーカー）─────────────
+  //   同一カテゴリ内は OR、カテゴリをまたぐと AND。
+  //   例：ジャンル(巨乳 or 人妻) かつ 女優(○○) → 2カテゴリ×IDで直積を作り、
+  //       各組み合わせを並列取得してから均等に混ぜる。
+  const parseIdList = (raw) => (raw || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const genreIds    = parseIdList(query.genreIds ?? query.genreId); // genreId は旧単数指定との後方互換
+  const actressIds  = parseIdList(query.actressIds);
+  const makerIds    = parseIdList(query.makerIds);
+
+  const activeCategories = [];
+  if (genreIds.length)   activeCategories.push({ type: "genre",   ids: genreIds });
+  if (actressIds.length) activeCategories.push({ type: "actress", ids: actressIds });
+  if (makerIds.length)   activeCategories.push({ type: "maker",   ids: makerIds });
+
+  const MAX_FILTER_COMBOS = 6; // API呼び出し数の上限（組み合わせが多すぎる場合はランダムに間引く）
+  function cartesianCombos(categories, cap) {
+    if (categories.length === 0) return [[]];
+    let combos = [[]];
+    for (const cat of categories) {
+      const next = [];
+      for (const combo of combos) {
+        for (const id of cat.ids) next.push([...combo, { type: cat.type, id }]);
+      }
+      combos = next;
+    }
+    return combos.length > cap ? shuffle(combos).slice(0, cap) : combos;
+  }
+  function buildArticleParams(combo) {
+    if (combo.length === 0) return {};
+    return { article: combo.map((c) => c.type).join(","), article_id: combo.map((c) => c.id).join(",") };
+  }
+
+  const isFiltered = activeCategories.length > 0;
+  const useRandom  = query.random !== "false" && FANZA_RANDOM_OFFSET;
 
   // ── 取得地点の決定 ──────────────────────────────────────────
-  //   ランダム時：離れた複数地点（マルチポイントサンプリング）
-  //   通常時    ：指定オフセットから連続ページング（fetchMore用）
-  const offsets = useRandom
-    ? pickSamplePoints(FANZA_SAMPLE_POINTS, FANZA_RANDOM_OFFSET_MAX)
-    : [Math.max(Number(query.offset) || 1, 1)];
+  //   フィルタあり：組み合わせごとに1地点
+  //   フィルタなし・ランダム：離れた複数地点（マルチポイントサンプリング）
+  //   フィルタなし・通常：指定オフセットから連続ページング（fetchMore用）
+  const combos  = isFiltered ? cartesianCombos(activeCategories, MAX_FILTER_COMBOS) : [[]];
+  const offsets = isFiltered
+    ? pickSamplePoints(combos.length, FANZA_RANDOM_OFFSET_MAX)
+    : useRandom
+      ? pickSamplePoints(FANZA_SAMPLE_POINTS, FANZA_RANDOM_OFFSET_MAX)
+      : [Math.max(Number(query.offset) || 1, 1)];
 
   const queryInfo = {
-    site, service, floor, sort, keyword, genreId,
+    site, service, floor, sort, keyword,
+    genreIds, actressIds, makerIds, combosUsed: combos.length,
     offsetUsed: offsets[0], samplePoints: offsets, random: useRandom, order,
   };
   const fetchPerPage = 100;
@@ -112,14 +149,14 @@ async function getFanzaSamples(query) {
   }
 
   /** 1ページ分を取得してカード化（重複・無料・サンプル無しを除外） */
-  async function fetchPage(pageOffset) {
+  async function fetchPage(pageOffset, extraParams = {}) {
     const params = new URLSearchParams({
       api_id: apiId, affiliate_id: affiliateId,
       site, service, floor, sort,
       hits: String(fetchPerPage), offset: String(pageOffset), output: "json",
     });
     if (keyword) params.set("keyword", keyword);
-    if (genreId) { params.set("article", "genre"); params.set("article_id", genreId); }
+    for (const [k, v] of Object.entries(extraParams)) params.set(k, v);
 
     const raw  = await fetchUrl(`https://api.dmm.com/affiliate/v3/ItemList?${params.toString()}`);
     const data = JSON.parse(raw);
@@ -148,7 +185,26 @@ async function getFanzaSamples(query) {
   const collected = [];
 
   try {
-    if (useRandom) {
+    if (isFiltered) {
+      // ── フィルタモード：組み合わせごとに並列取得して均等に混ぜる ──
+      const perCombo = Math.ceil(hits / combos.length) + 3;
+      const results  = await Promise.all(
+        combos.map((combo, i) =>
+          fetchPage(offsets[i], buildArticleParams(combo)).catch(() => ({ pageCards: [], itemsCount: 0 }))
+        )
+      );
+      const pools = results.map((r) => shuffle(r.pageCards).slice(0, perCombo));
+      let added = true;
+      while (collected.length < hits && added) {
+        added = false;
+        for (const pool of pools) {
+          if (pool.length === 0) continue;
+          collected.push(pool.shift());
+          added = true;
+          if (collected.length >= hits) break;
+        }
+      }
+    } else if (useRandom) {
       // ── マルチポイントサンプリング ────────────────────────────
       //   各地点から並列で1ページずつ取得し、各地点から均等に採用。
       //   地点ごとの上限 = ceil(hits / 地点数) + 少し余裕。
@@ -187,7 +243,7 @@ async function getFanzaSamples(query) {
 
   const rawCards   = collected.slice(0, hits);
   const cards      = applyFeedOrder(rawCards, order);
-  const nextOffset = useRandom
+  const nextOffset = (isFiltered || useRandom)
     ? Math.floor(Math.random() * FANZA_RANDOM_OFFSET_MAX) + 1  // 次回fetchMoreの起点もランダムに
     : offsets[0] + MAX_FETCH_PAGES * fetchPerPage;
   const makerList  = [...new Set(cards.map((c) => c.maker).filter(Boolean))];
@@ -212,12 +268,15 @@ async function getFanzaSamples(query) {
   };
 }
 
-// ── ジャンル一覧取得（人気度は簡易近似）──────────────────────────
+// ── ジャンル/女優/メーカー一覧取得（人気度は簡易近似）────────────
 //   DMM の GenreSearch API 自体は件数情報を返さないため、
 //   最新カタログから数百件サンプリングして出現頻度を集計し、
 //   それを「人気順」の近似として使う。
-//   （真の総販売数ベースの人気順ではないことに注意）
-async function getFanzaGenres(query = {}) {
+//   女優・メーカーには公式の一覧APIが別途あるが、ジャンルと
+//   同じサンプリングパスで頻度集計できるため、API呼び出し回数を
+//   増やさずに3種類まとめて取得する。
+//   （いずれも真の総販売数ベースの人気順ではないことに注意）
+async function getFanzaFacets(query = {}) {
   const apiId       = process.env.DMM_API_ID;
   const affiliateId = process.env.DMM_AFFILIATE_ID;
   if (!apiId || !affiliateId) {
@@ -237,7 +296,7 @@ async function getFanzaGenres(query = {}) {
     } catch { /* 解決できなければ genre id 抜きで続行 */ }
   }
 
-  // ② ジャンルの正式一覧（id / name）を取得
+  // ② ジャンルの正式一覧（id / name）を取得（女優・メーカーは公式一覧APIを使わず③のサンプルのみで賄う）
   let officialGenres = [];
   if (floorId) {
     const genreParams = new URLSearchParams({
@@ -253,10 +312,12 @@ async function getFanzaGenres(query = {}) {
     }
   }
 
-  // ③ 最新カタログを数ページサンプリングしてジャンル出現頻度を集計
-  const SAMPLE_PAGES = 3;
+  // ③ 最新カタログを数ページサンプリングしてジャンル・女優・メーカーの出現頻度を集計
+  const SAMPLE_PAGES = 4;
   const samplePoints = pickSamplePoints(SAMPLE_PAGES, FANZA_RANDOM_OFFSET_MAX);
-  const freq = new Map();
+  const genreFreq    = new Map();
+  const actressFreq  = new Map(); // name -> { count, id }
+  const makerFreq    = new Map(); // name -> { count, id }
 
   await Promise.all(samplePoints.map(async (offset) => {
     try {
@@ -270,26 +331,43 @@ async function getFanzaGenres(query = {}) {
       const items = data.result?.items ?? [];
       for (const item of items) {
         for (const g of item.iteminfo?.genre ?? []) {
-          freq.set(g.name, (freq.get(g.name) || 0) + 1);
+          genreFreq.set(g.name, (genreFreq.get(g.name) || 0) + 1);
+        }
+        for (const a of item.iteminfo?.actress ?? []) {
+          const cur = actressFreq.get(a.name) || { count: 0, id: a.id };
+          cur.count += 1;
+          actressFreq.set(a.name, cur);
+        }
+        for (const m of item.iteminfo?.maker ?? []) {
+          const cur = makerFreq.get(m.name) || { count: 0, id: m.id };
+          cur.count += 1;
+          makerFreq.set(m.name, cur);
         }
       }
     } catch { /* 1地点の失敗は無視して続行 */ }
   }));
 
-  // ④ 出現頻度でマージ。GenreSearchに無い名前もサンプルから拾う
-  const nameSet = new Set(officialGenres.map((g) => g.name));
-  for (const name of freq.keys()) {
-    if (!nameSet.has(name)) { officialGenres.push({ id: null, name }); nameSet.add(name); }
+  // ④ ジャンル：出現頻度でマージ。GenreSearchに無い名前もサンプルから拾う
+  const genreNameSet = new Set(officialGenres.map((g) => g.name));
+  for (const name of genreFreq.keys()) {
+    if (!genreNameSet.has(name)) { officialGenres.push({ id: null, name }); genreNameSet.add(name); }
   }
-
   const genres = officialGenres
-    .map((g) => ({ ...g, count: freq.get(g.name) || 0 }))
+    .map((g) => ({ ...g, count: genreFreq.get(g.name) || 0 }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja"));
+
+  // ⑤ 女優・メーカー：サンプルからのみ生成（公式一覧APIは呼ばない）
+  const actresses = [...actressFreq.entries()]
+    .map(([name, v]) => ({ id: v.id ?? null, name, count: v.count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja"));
+  const makers = [...makerFreq.entries()]
+    .map(([name, v]) => ({ id: v.id ?? null, name, count: v.count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja"));
 
   return {
     status: 200,
     body: {
-      genres,
+      genres, actresses, makers,
       approximate: true, // 件数はサンプリング近似であることをクライアントに明示
       sampledFrom: samplePoints.length,
     },
@@ -353,4 +431,4 @@ function buildMockCards(hits, offset) {
   return cards;
 }
 
-module.exports = { getFanzaSamples, getFanzaGenres, getFanzaFloors, buildMockCards };
+module.exports = { getFanzaSamples, getFanzaFacets, getFanzaFloors, buildMockCards };

@@ -341,14 +341,19 @@ export default function SwipeApp({ onNavigate }) {
   const fanzaHits       = 20;
   const hasAutoLoaded   = useRef(false);
 
-  // ─── ジャンル絞り込み ───────────────────────────────────────
-  const [genres, setGenres]           = useState([]);          // [{id,name,count}]
-  const [genresLoaded, setGenresLoaded] = useState(false);
-  const [isGenrePanelOpen, setIsGenrePanelOpen] = useState(false);
-  const [genreSearchText, setGenreSearchText]   = useState("");
-  const [activeGenre, setActiveGenre] = useState(null);         // {id,name} | null
-  const activeGenreRef = useRef(null);
-  useEffect(() => { activeGenreRef.current = activeGenre; }, [activeGenre]);
+  // ─── 絞り込み（ジャンル / 女優 / メーカー、複数選択可）───────
+  //   同一カテゴリ内は OR、カテゴリをまたぐと AND。
+  //   例：ジャンル(巨乳 or 人妻) かつ 女優(○○) のように絞り込める。
+  const [facets, setFacets]             = useState({ genres: [], actresses: [], makers: [] });
+  const [facetsLoaded, setFacetsLoaded] = useState(false);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [filterTab, setFilterTab]       = useState("genres"); // "genres" | "actresses" | "makers"
+  const [filterSearchText, setFilterSearchText]   = useState("");
+  // 選択中フィルタ：カテゴリごとの配列 { genres: [{id,name}], actresses: [...], makers: [...] }
+  const [activeFilters, setActiveFilters] = useState({ genres: [], actresses: [], makers: [] });
+  const activeFiltersRef = useRef(activeFilters);
+  useEffect(() => { activeFiltersRef.current = activeFilters; }, [activeFilters]);
+  const hasActiveFilters = activeFilters.genres.length + activeFilters.actresses.length + activeFilters.makers.length > 0;
 
   const cardsRef        = useRef(cards);
   const isAnimatingRef  = useRef(false);
@@ -384,9 +389,10 @@ export default function SwipeApp({ onNavigate }) {
     const params = new URLSearchParams({ hits: String(fanzaHits) });
     if (random) { params.set("random", "true"); }
     else { params.set("random", "false"); params.set("offset", String(offset)); }
-    const genre = activeGenreRef.current;
-    if (genre?.id) params.set("genreId", genre.id);
-    else if (genre?.name) params.set("keyword", genre.name); // idが無い場合はキーワードで代用
+    const f = activeFiltersRef.current;
+    if (f.genres.length)    params.set("genreIds",   f.genres.map((g) => g.id).filter(Boolean).join(","));
+    if (f.actresses.length) params.set("actressIds", f.actresses.map((a) => a.id).filter(Boolean).join(","));
+    if (f.makers.length)    params.set("makerIds",   f.makers.map((m) => m.id).filter(Boolean).join(","));
     const res = await fetch(`${appConfig.apiBase}/fanza-samples?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -395,38 +401,68 @@ export default function SwipeApp({ onNavigate }) {
     return res.json();
   }
 
-  // ─── ジャンル一覧取得（パネルを開いた時に1回だけ）───────────
-  const loadGenres = useCallback(async () => {
-    if (genresLoaded) return;
+  // ─── ジャンル/女優/メーカー一覧取得（パネルを開いた時に1回だけ）
+  const loadFacets = useCallback(async () => {
+    if (facetsLoaded) return;
     try {
-      const res = await fetch(`${appConfig.apiBase}/fanza-genres`);
+      const res = await fetch(`${appConfig.apiBase}/fanza-facets`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setGenres(data.genres || []);
-      setGenresLoaded(true);
+      setFacets({
+        genres:    data.genres    || [],
+        actresses: data.actresses || [],
+        makers:    data.makers    || [],
+      });
+      setFacetsLoaded(true);
     } catch (err) {
-      log("[genres] error:", err.message);
+      log("[facets] error:", err.message);
     }
-  }, [genresLoaded]);
+  }, [facetsLoaded]);
 
-  const openGenrePanel = () => {
-    setIsGenrePanelOpen(true);
-    loadGenres();
+  const openFilterPanel = () => {
+    setIsFilterPanelOpen(true);
+    loadFacets();
   };
 
-  const selectGenre = (genre) => {
-    activeGenreRef.current = genre;   // 同期更新（useEffect反映を待たない）
-    setActiveGenre(genre);
-    setIsGenrePanelOpen(false);
-    setGenreSearchText("");
+  // チップをタップ → そのカテゴリ内でトグル（複数選択可）。即フェッチはしない。
+  const toggleFilterItem = (category, item) => {
+    setActiveFilters((prev) => {
+      const list = prev[category];
+      const exists = list.some((x) => x.name === item.name);
+      const nextList = exists ? list.filter((x) => x.name !== item.name) : [...list, item];
+      return { ...prev, [category]: nextList };
+    });
+  };
+
+  // 個別バッジの✕から特定の1件だけ外す
+  const removeFilterItem = (category, item) => {
+    setActiveFilters((prev) => ({
+      ...prev,
+      [category]: prev[category].filter((x) => x.name !== item.name),
+    }));
+    // 即時反映（同期更新してから再取得）
+    activeFiltersRef.current = {
+      ...activeFiltersRef.current,
+      [category]: activeFiltersRef.current[category].filter((x) => x.name !== item.name),
+    };
     handleLoadFanza();
   };
 
-  const clearGenre = () => {
-    if (!activeGenre) return;
-    activeGenreRef.current = null;    // 同期更新
-    setActiveGenre(null);
-    handleLoadFanza(); // 通常のランダムフィードに復帰
+  // パネルの「絞り込む」ボタン：選択を確定してフィード再取得
+  const applyFilters = () => {
+    activeFiltersRef.current = activeFilters; // 同期更新（useEffect反映を待たない）
+    setIsFilterPanelOpen(false);
+    setFilterSearchText("");
+    handleLoadFanza();
+  };
+
+  // すべての絞り込みを解除 → 通常のランダムフィードに復帰（いつでも戻せる）
+  const clearAllFilters = () => {
+    const empty = { genres: [], actresses: [], makers: [] };
+    activeFiltersRef.current = empty;
+    setActiveFilters(empty);
+    setIsFilterPanelOpen(false);
+    handleLoadFanza();
   };
 
   const handleLoadFanza = useCallback(async () => {
@@ -687,9 +723,9 @@ export default function SwipeApp({ onNavigate }) {
           </button>
           {activeTab === "feed" && (
             <button
-              className={`tab-btn tab-btn--icon ${activeGenre ? "tab-btn--active" : ""}`}
-              onClick={openGenrePanel}
-              aria-label="ジャンルで絞り込む"
+              className={`tab-btn tab-btn--icon ${hasActiveFilters ? "tab-btn--active" : ""}`}
+              onClick={openFilterPanel}
+              aria-label="ジャンル・女優・メーカーで絞り込む"
             >
               🔍
             </button>
@@ -697,42 +733,75 @@ export default function SwipeApp({ onNavigate }) {
         </nav>
       </header>
 
-      {/* ── ジャンル絞り込みパネル ─────────────────────── */}
-      {isGenrePanelOpen && (
-        <div className="genre-panel-backdrop" data-no-swipe onClick={() => setIsGenrePanelOpen(false)}>
+      {/* ── 絞り込みパネル（ジャンル / 女優 / メーカー、複数選択可）── */}
+      {isFilterPanelOpen && (
+        <div className="genre-panel-backdrop" data-no-swipe onClick={() => setIsFilterPanelOpen(false)}>
           <div className="genre-panel" onClick={(e) => e.stopPropagation()}>
             <div className="genre-panel-header">
-              <h3>ジャンルで絞り込む</h3>
-              <button className="genre-panel-close" onClick={() => setIsGenrePanelOpen(false)}>✕</button>
+              <h3>絞り込む</h3>
+              <button className="genre-panel-close" onClick={() => setIsFilterPanelOpen(false)}>✕</button>
             </div>
+
+            <div className="filter-tab-row">
+              {[
+                { key: "genres",    label: "ジャンル" },
+                { key: "actresses", label: "女優" },
+                { key: "makers",    label: "メーカー" },
+              ].map((t) => (
+                <button
+                  key={t.key}
+                  className={`filter-tab-btn ${filterTab === t.key ? "filter-tab-btn--active" : ""}`}
+                  onClick={() => { setFilterTab(t.key); setFilterSearchText(""); }}
+                >
+                  {t.label}
+                  {activeFilters[t.key].length > 0 && (
+                    <span className="filter-tab-count">{activeFilters[t.key].length}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
             <input
               type="text"
               className="genre-search-input"
-              placeholder="ジャンルを検索…"
-              value={genreSearchText}
-              onChange={(e) => setGenreSearchText(e.target.value)}
+              placeholder="検索…"
+              value={filterSearchText}
+              onChange={(e) => setFilterSearchText(e.target.value)}
               autoFocus
             />
+
             <div className="genre-chip-list">
-              {!genresLoaded && (
-                <p className="genre-loading">ジャンル一覧を読み込み中…</p>
+              {!facetsLoaded && (
+                <p className="genre-loading">読み込み中…</p>
               )}
-              {genresLoaded && genres.length === 0 && (
-                <p className="genre-loading">ジャンル一覧を取得できませんでした</p>
+              {facetsLoaded && facets[filterTab].length === 0 && (
+                <p className="genre-loading">一覧を取得できませんでした</p>
               )}
-              {genresLoaded && genres
-                .filter((g) => g.name.includes(genreSearchText))
+              {facetsLoaded && facets[filterTab]
+                .filter((f) => f.name.includes(filterSearchText))
                 .slice(0, 200)
-                .map((g) => (
-                  <button
-                    key={g.id ?? g.name}
-                    className={`genre-chip ${activeGenre?.name === g.name ? "genre-chip--active" : ""}`}
-                    onClick={() => selectGenre(g)}
-                  >
-                    {g.name}
-                  </button>
-                ))
+                .map((f) => {
+                  const isActive = activeFilters[filterTab].some((x) => x.name === f.name);
+                  return (
+                    <button
+                      key={f.id ?? f.name}
+                      className={`genre-chip ${isActive ? "genre-chip--active" : ""}`}
+                      onClick={() => toggleFilterItem(filterTab, f)}
+                    >
+                      {f.name}
+                    </button>
+                  );
+                })
               }
+            </div>
+
+            <div className="genre-panel-footer">
+              <button className="btn-clear-filters" onClick={clearAllFilters} disabled={!hasActiveFilters}>
+                すべて解除
+              </button>
+              <button className="btn-apply-filters" onClick={applyFilters}>
+                この条件で絞り込む
+              </button>
             </div>
           </div>
         </div>
@@ -741,10 +810,26 @@ export default function SwipeApp({ onNavigate }) {
       {/* ════════ フィード ════════ */}
       {activeTab === "feed" && (
         <div className="shortform-stage">
-          {activeGenre && (
-            <div className="active-genre-badge" data-no-swipe>
-              絞り込み中: {activeGenre.name}
-              <button className="active-genre-clear" onClick={clearGenre} aria-label="絞り込み解除">✕</button>
+          {hasActiveFilters && (
+            <div className="active-genre-badge-row" data-no-swipe>
+              {activeFilters.genres.map((g) => (
+                <span key={`g-${g.name}`} className="active-genre-badge">
+                  {g.name}
+                  <button className="active-genre-clear" onClick={() => removeFilterItem("genres", g)} aria-label="解除">✕</button>
+                </span>
+              ))}
+              {activeFilters.actresses.map((a) => (
+                <span key={`a-${a.name}`} className="active-genre-badge">
+                  {a.name}
+                  <button className="active-genre-clear" onClick={() => removeFilterItem("actresses", a)} aria-label="解除">✕</button>
+                </span>
+              ))}
+              {activeFilters.makers.map((m) => (
+                <span key={`m-${m.name}`} className="active-genre-badge">
+                  {m.name}
+                  <button className="active-genre-clear" onClick={() => removeFilterItem("makers", m)} aria-label="解除">✕</button>
+                </span>
+              ))}
             </div>
           )}
 

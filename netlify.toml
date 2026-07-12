@@ -14,8 +14,8 @@
   status = 200
 
 [[redirects]]
-  from   = "/api/fanza-genres"
-  to     = "/.netlify/functions/fanza-genres"
+  from   = "/api/fanza-facets"
+  to     = "/.netlify/functions/fanza-facets"
   status = 200
 
 [[redirects]]

@@ -1278,39 +1278,47 @@ html, body, #root {
   font-size: 0.95rem;
 }
 
-/* ─── 絞り込み中バッジ（フィード上部）──────────────────── */
-.active-genre-badge {
+/* ─── 絞り込み中バッジの行（複数表示）──────────────────── */
+.active-genre-badge-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
   align-self: center;
   margin: 8px auto 0;
-  padding: 6px 8px 6px 14px;
+  padding: 0 12px;
+  z-index: 5;
+}
+.active-genre-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 12px;
   background: rgba(255, 79, 123, 0.12);
   border: 1px solid rgba(255, 79, 123, 0.3);
   border-radius: 20px;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   color: var(--like);
   font-weight: 600;
-  z-index: 5;
 }
 .active-genre-clear {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: none;
   background: rgba(255, 79, 123, 0.2);
   color: var(--like);
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 .active-genre-clear:active { transform: scale(0.88); }
 
-/* ─── ジャンル絞り込みパネル ─────────────────────────────
-   いつでも戻せる：✕ or 背景タップで閉じる、選択解除で通常フィードに復帰 */
+/* ─── 絞り込みパネル ─────────────────────────────────────
+   いつでも戻せる：✕ or 背景タップで閉じる、すべて解除ボタンあり */
 .genre-panel-backdrop {
   position: fixed;
   inset: 0;
@@ -1323,7 +1331,7 @@ html, body, #root {
 .genre-panel {
   width: 100%;
   max-width: 480px;
-  max-height: 70vh;
+  max-height: 78vh;
   background: var(--bg, #0d0d0d);
   border-radius: 16px 16px 0 0;
   padding: 16px;
@@ -1353,6 +1361,51 @@ html, body, #root {
   cursor: pointer;
 }
 
+/* カテゴリ切り替えタブ（ジャンル / 女優 / メーカー）*/
+.filter-tab-row {
+  display: flex;
+  gap: 6px;
+}
+.filter-tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-sub);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.filter-tab-btn--active {
+  border-color: var(--like);
+  background: rgba(255, 79, 123, 0.14);
+  color: var(--like);
+}
+.filter-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--like);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+/*
+  iOS Safari 対策：input の font-size が 16px 未満だと、
+  フォーカス時にページ全体が自動的に拡大されてしまう。
+  16px 以上を指定することでこの拡大を防ぐ。
+*/
 .genre-search-input {
   width: 100%;
   padding: 10px 14px;
@@ -1360,7 +1413,7 @@ html, body, #root {
   border: 1px solid rgba(255,255,255,0.15);
   background: rgba(255,255,255,0.05);
   color: var(--text, #fff);
-  font-size: 0.85rem;
+  font-size: 16px;
 }
 .genre-search-input:focus {
   outline: none;
@@ -1373,6 +1426,8 @@ html, body, #root {
   gap: 8px;
   overflow-y: auto;
   padding-bottom: 8px;
+  flex: 1;
+  min-height: 0;
 }
 .genre-loading {
   font-size: 0.78rem;
@@ -1396,6 +1451,39 @@ html, body, #root {
   color: var(--like);
   font-weight: 700;
 }
+
+/* パネル下部：すべて解除 / この条件で絞り込む */
+.genre-panel-footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.btn-clear-filters,
+.btn-apply-filters {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+}
+.btn-clear-filters {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-sub);
+}
+.btn-clear-filters:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn-apply-filters {
+  background: var(--like);
+  color: #fff;
+}
+.btn-apply-filters:active,
+.btn-clear-filters:active:not(:disabled) { transform: scale(0.97); }
+
 .liked-card-footer {
   display: flex;
   align-items: center;
