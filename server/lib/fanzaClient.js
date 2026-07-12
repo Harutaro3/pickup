@@ -78,6 +78,7 @@ async function getFanzaSamples(query) {
   const floor   = query.floor   || FANZA_DEFAULTS.floor;
   const sort    = query.sort    || FANZA_DEFAULTS.sort;
   const keyword = query.keyword || "";
+  const genreId = query.genreId || "";   // ジャンルID指定時は article=genre で厳密フィルタ
   const order   = (["api","random","diverse"].includes(query.order)) ? query.order : (process.env.FEED_ORDER_MODE || "diverse");
 
   const useRandom = query.random !== "false" && FANZA_RANDOM_OFFSET;
@@ -90,7 +91,7 @@ async function getFanzaSamples(query) {
     : [Math.max(Number(query.offset) || 1, 1)];
 
   const queryInfo = {
-    site, service, floor, sort, keyword,
+    site, service, floor, sort, keyword, genreId,
     offsetUsed: offsets[0], samplePoints: offsets, random: useRandom, order,
   };
   const fetchPerPage = 100;
@@ -118,6 +119,7 @@ async function getFanzaSamples(query) {
       hits: String(fetchPerPage), offset: String(pageOffset), output: "json",
     });
     if (keyword) params.set("keyword", keyword);
+    if (genreId) { params.set("article", "genre"); params.set("article_id", genreId); }
 
     const raw  = await fetchUrl(`https://api.dmm.com/affiliate/v3/ItemList?${params.toString()}`);
     const data = JSON.parse(raw);
@@ -210,6 +212,90 @@ async function getFanzaSamples(query) {
   };
 }
 
+// ── ジャンル一覧取得（人気度は簡易近似）──────────────────────────
+//   DMM の GenreSearch API 自体は件数情報を返さないため、
+//   最新カタログから数百件サンプリングして出現頻度を集計し、
+//   それを「人気順」の近似として使う。
+//   （真の総販売数ベースの人気順ではないことに注意）
+async function getFanzaGenres(query = {}) {
+  const apiId       = process.env.DMM_API_ID;
+  const affiliateId = process.env.DMM_AFFILIATE_ID;
+  if (!apiId || !affiliateId) {
+    return { status: 500, body: { error: "サーバーに API キーが設定されていません。" } };
+  }
+
+  const floor = query.floor || FANZA_DEFAULTS.floor;
+
+  // ① floor_id を FloorList から動的解決（ハードコード禁止）
+  let floorId = query.floor_id || null;
+  if (!floorId) {
+    try {
+      const floorsResult = await getFanzaFloors();
+      const svc = floorsResult.body?.services?.find((s) => s.code === FANZA_DEFAULTS.service);
+      const fl  = svc?.floors?.find((f) => f.code === floor);
+      floorId = fl?.code || null;
+    } catch { /* 解決できなければ genre id 抜きで続行 */ }
+  }
+
+  // ② ジャンルの正式一覧（id / name）を取得
+  let officialGenres = [];
+  if (floorId) {
+    const genreParams = new URLSearchParams({
+      api_id: apiId, affiliate_id: affiliateId,
+      floor_id: floorId, output: "json", hits: "500",
+    });
+    try {
+      const raw  = await fetchUrl(`https://api.dmm.com/affiliate/v3/GenreSearch?${genreParams.toString()}`);
+      const data = JSON.parse(raw);
+      officialGenres = (data.result?.genre ?? []).map((g) => ({ id: g.genre_id, name: g.name }));
+    } catch {
+      // GenreSearch が失敗しても後続のサンプリング集計だけで返す
+    }
+  }
+
+  // ③ 最新カタログを数ページサンプリングしてジャンル出現頻度を集計
+  const SAMPLE_PAGES = 3;
+  const samplePoints = pickSamplePoints(SAMPLE_PAGES, FANZA_RANDOM_OFFSET_MAX);
+  const freq = new Map();
+
+  await Promise.all(samplePoints.map(async (offset) => {
+    try {
+      const params = new URLSearchParams({
+        api_id: apiId, affiliate_id: affiliateId,
+        site: FANZA_DEFAULTS.site, service: FANZA_DEFAULTS.service, floor,
+        sort: FANZA_DEFAULTS.sort, hits: "100", offset: String(offset), output: "json",
+      });
+      const raw  = await fetchUrl(`https://api.dmm.com/affiliate/v3/ItemList?${params.toString()}`);
+      const data = JSON.parse(raw);
+      const items = data.result?.items ?? [];
+      for (const item of items) {
+        for (const g of item.iteminfo?.genre ?? []) {
+          freq.set(g.name, (freq.get(g.name) || 0) + 1);
+        }
+      }
+    } catch { /* 1地点の失敗は無視して続行 */ }
+  }));
+
+  // ④ 出現頻度でマージ。GenreSearchに無い名前もサンプルから拾う
+  const nameSet = new Set(officialGenres.map((g) => g.name));
+  for (const name of freq.keys()) {
+    if (!nameSet.has(name)) { officialGenres.push({ id: null, name }); nameSet.add(name); }
+  }
+
+  const genres = officialGenres
+    .map((g) => ({ ...g, count: freq.get(g.name) || 0 }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ja"));
+
+  return {
+    status: 200,
+    body: {
+      genres,
+      approximate: true, // 件数はサンプリング近似であることをクライアントに明示
+      sampledFrom: samplePoints.length,
+    },
+  };
+}
+
 // ── フロア一覧 ─────────────────────────────────────────────────
 async function getFanzaFloors() {
   const apiId       = process.env.DMM_API_ID;
@@ -267,4 +353,4 @@ function buildMockCards(hits, offset) {
   return cards;
 }
 
-module.exports = { getFanzaSamples, getFanzaFloors, buildMockCards };
+module.exports = { getFanzaSamples, getFanzaGenres, getFanzaFloors, buildMockCards };

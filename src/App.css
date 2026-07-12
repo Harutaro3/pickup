@@ -1272,7 +1272,130 @@ html, body, #root {
 .btn-play-pause:active { transform: scale(0.88); }
 .btn-play-pause--playing { background: rgba(255, 255, 255, 0.15); }
 
-/* ─── いいね一覧：詳細リンク＋削除ボタンの行 ──────────── */
+/* ─── ジャンル検索アイコン（🔍）────────────────────────── */
+.tab-btn--icon {
+  padding: 5px 10px;
+  font-size: 0.95rem;
+}
+
+/* ─── 絞り込み中バッジ（フィード上部）──────────────────── */
+.active-genre-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  margin: 8px auto 0;
+  padding: 6px 8px 6px 14px;
+  background: rgba(255, 79, 123, 0.12);
+  border: 1px solid rgba(255, 79, 123, 0.3);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  color: var(--like);
+  font-weight: 600;
+  z-index: 5;
+}
+.active-genre-clear {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 79, 123, 0.2);
+  color: var(--like);
+  font-size: 0.65rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.active-genre-clear:active { transform: scale(0.88); }
+
+/* ─── ジャンル絞り込みパネル ─────────────────────────────
+   いつでも戻せる：✕ or 背景タップで閉じる、選択解除で通常フィードに復帰 */
+.genre-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+}
+.genre-panel {
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  background: var(--bg, #0d0d0d);
+  border-radius: 16px 16px 0 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+.genre-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.genre-panel-header h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text, #fff);
+}
+.genre-panel-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface, rgba(255,255,255,0.08));
+  color: var(--text-sub);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.genre-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: var(--text, #fff);
+  font-size: 0.85rem;
+}
+.genre-search-input:focus {
+  outline: none;
+  border-color: var(--like);
+}
+
+.genre-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+.genre-loading {
+  font-size: 0.78rem;
+  color: var(--text-sub);
+  padding: 8px 0;
+}
+.genre-chip {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: var(--text, #fff);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.genre-chip:hover { background: rgba(255,255,255,0.1); }
+.genre-chip--active {
+  border-color: var(--like);
+  background: rgba(255, 79, 123, 0.18);
+  color: var(--like);
+  font-weight: 700;
+}
 .liked-card-footer {
   display: flex;
   align-items: center;

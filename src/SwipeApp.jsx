@@ -196,7 +196,7 @@ function LikedPage({ liked, onClear, onRemove }) {
 //     card-media（video / iframe / thumbnail）
 //     card-overlay（タイトル・タグ・詳細リンク ＋ ♥）
 // ═══════════════════════════════════════════════════════════════
-function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
+function CardContent({ card, isLiked, likeFlash, onLike, onDetailClick, videoRef }) {
   const isIframe = card.sampleType === "iframe" && card.videoSrc;
   const outbound = getOutboundUrl(card);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
@@ -303,6 +303,7 @@ function CardContent({ card, isLiked, likeFlash, onLike, videoRef }) {
               rel="noopener noreferrer"
               className="card-detail-link"
               data-no-swipe
+              onClick={() => onDetailClick && onDetailClick(card)}
             >
               詳細を見る →
             </a>
@@ -340,6 +341,15 @@ export default function SwipeApp({ onNavigate }) {
   const fanzaHits       = 20;
   const hasAutoLoaded   = useRef(false);
 
+  // ─── ジャンル絞り込み ───────────────────────────────────────
+  const [genres, setGenres]           = useState([]);          // [{id,name,count}]
+  const [genresLoaded, setGenresLoaded] = useState(false);
+  const [isGenrePanelOpen, setIsGenrePanelOpen] = useState(false);
+  const [genreSearchText, setGenreSearchText]   = useState("");
+  const [activeGenre, setActiveGenre] = useState(null);         // {id,name} | null
+  const activeGenreRef = useRef(null);
+  useEffect(() => { activeGenreRef.current = activeGenre; }, [activeGenre]);
+
   const cardsRef        = useRef(cards);
   const isAnimatingRef  = useRef(false);
   const videoRef        = useRef(null);
@@ -374,6 +384,9 @@ export default function SwipeApp({ onNavigate }) {
     const params = new URLSearchParams({ hits: String(fanzaHits) });
     if (random) { params.set("random", "true"); }
     else { params.set("random", "false"); params.set("offset", String(offset)); }
+    const genre = activeGenreRef.current;
+    if (genre?.id) params.set("genreId", genre.id);
+    else if (genre?.name) params.set("keyword", genre.name); // idが無い場合はキーワードで代用
     const res = await fetch(`${appConfig.apiBase}/fanza-samples?${params.toString()}`);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -381,6 +394,40 @@ export default function SwipeApp({ onNavigate }) {
     }
     return res.json();
   }
+
+  // ─── ジャンル一覧取得（パネルを開いた時に1回だけ）───────────
+  const loadGenres = useCallback(async () => {
+    if (genresLoaded) return;
+    try {
+      const res = await fetch(`${appConfig.apiBase}/fanza-genres`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setGenres(data.genres || []);
+      setGenresLoaded(true);
+    } catch (err) {
+      log("[genres] error:", err.message);
+    }
+  }, [genresLoaded]);
+
+  const openGenrePanel = () => {
+    setIsGenrePanelOpen(true);
+    loadGenres();
+  };
+
+  const selectGenre = (genre) => {
+    activeGenreRef.current = genre;   // 同期更新（useEffect反映を待たない）
+    setActiveGenre(genre);
+    setIsGenrePanelOpen(false);
+    setGenreSearchText("");
+    handleLoadFanza();
+  };
+
+  const clearGenre = () => {
+    if (!activeGenre) return;
+    activeGenreRef.current = null;    // 同期更新
+    setActiveGenre(null);
+    handleLoadFanza(); // 通常のランダムフィードに復帰
+  };
 
   const handleLoadFanza = useCallback(async () => {
     if (isFetchingFanza) return;
@@ -495,6 +542,12 @@ export default function SwipeApp({ onNavigate }) {
       applyTagDelta(card, 1);
     }
   }, [liked, applyTagDelta]);
+
+  // 「詳細を見る」クリック＝軽い好みシグナル（+0.3、取り消し不可）
+  const handleDetailClick = useCallback((card) => {
+    if (!card) return;
+    applyTagDelta(card, 0.3);
+  }, [applyTagDelta]);
 
   // いいね一覧からの個別削除（タグ重みも戻す）
   const handleRemoveFromLiked = useCallback((id) => {
@@ -632,12 +685,69 @@ export default function SwipeApp({ onNavigate }) {
           >
             いいね {liked.length > 0 && <span className="tab-badge">{liked.length}</span>}
           </button>
+          {activeTab === "feed" && (
+            <button
+              className={`tab-btn tab-btn--icon ${activeGenre ? "tab-btn--active" : ""}`}
+              onClick={openGenrePanel}
+              aria-label="ジャンルで絞り込む"
+            >
+              🔍
+            </button>
+          )}
         </nav>
       </header>
+
+      {/* ── ジャンル絞り込みパネル ─────────────────────── */}
+      {isGenrePanelOpen && (
+        <div className="genre-panel-backdrop" data-no-swipe onClick={() => setIsGenrePanelOpen(false)}>
+          <div className="genre-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="genre-panel-header">
+              <h3>ジャンルで絞り込む</h3>
+              <button className="genre-panel-close" onClick={() => setIsGenrePanelOpen(false)}>✕</button>
+            </div>
+            <input
+              type="text"
+              className="genre-search-input"
+              placeholder="ジャンルを検索…"
+              value={genreSearchText}
+              onChange={(e) => setGenreSearchText(e.target.value)}
+              autoFocus
+            />
+            <div className="genre-chip-list">
+              {!genresLoaded && (
+                <p className="genre-loading">ジャンル一覧を読み込み中…</p>
+              )}
+              {genresLoaded && genres.length === 0 && (
+                <p className="genre-loading">ジャンル一覧を取得できませんでした</p>
+              )}
+              {genresLoaded && genres
+                .filter((g) => g.name.includes(genreSearchText))
+                .slice(0, 200)
+                .map((g) => (
+                  <button
+                    key={g.id ?? g.name}
+                    className={`genre-chip ${activeGenre?.name === g.name ? "genre-chip--active" : ""}`}
+                    onClick={() => selectGenre(g)}
+                  >
+                    {g.name}
+                  </button>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ════════ フィード ════════ */}
       {activeTab === "feed" && (
         <div className="shortform-stage">
+          {activeGenre && (
+            <div className="active-genre-badge" data-no-swipe>
+              絞り込み中: {activeGenre.name}
+              <button className="active-genre-clear" onClick={clearGenre} aria-label="絞り込み解除">✕</button>
+            </div>
+          )}
+
           {fanzaError && (
             <div className="error-banner" role="alert" data-no-swipe>
               <span className="error-icon">⚠️</span>
@@ -665,6 +775,7 @@ export default function SwipeApp({ onNavigate }) {
                 isLiked={isCurrentLiked}
                 likeFlash={likeFlashId === currentCard.id}
                 onLike={() => handleLike(currentCard)}
+                onDetailClick={handleDetailClick}
                 videoRef={videoRef}
               />
             </div>
